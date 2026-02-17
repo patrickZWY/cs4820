@@ -198,3 +198,6 @@
 (property qsort-ordered-perm<<= (x :tl)
           (^ (orderedp (qsort x))
              (perm<<= (qsort x) x)))
+
+
+;; ai usage: Codex 70 percent for helping with theorem proving
