@@ -97,6 +97,10 @@ B4 -> B1 y became nil
   :body (l< (m-bad-app x nil res)
 	   (m-bad-app x y acc)))
 
+(property app-reduce-nested (x :tl y :all z :tl)
+ (== (app (append x (list y)) z)
+     (append x (cons y z))))
+
 (definec bad-app (x y acc :tl) :tl
   (declare (xargs :measure (m-bad-app x y acc)))
   (match (list x y)
