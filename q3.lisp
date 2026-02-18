@@ -35,7 +35,14 @@
 ; Notice that norm-if-expr is a subtype of if-expr.
 (defdata-subtype-strict norm-if-expr if-expr)
 
+;; lexicographic not really works here
+;; multiply measure of alpha on (sum of beta and gamma), base case 1, this can be falsified
+;; need to weigh alpha a little more, add m(alpha) so that it is not equal
+;; for fibonacci function, we just need to know the longest depth to prove termination
+;; an upper bound for the recursive calls
 
+
+; the last case is current case + twice of a + whichever branch taken
 (definec if-flat-measure (x :if-expr) :nat
   (match x
     (:if-atom 0)
@@ -113,6 +120,7 @@
     (('if x y z)
      (if (if-eval x a) (if-eval y a) (if-eval z a)))))
 
+;; preclude impossible shape
 (defthm impossible-if-condition-shape
   (implies (and (not (consp e3))
                 (not (booleanp e3))
@@ -122,7 +130,7 @@
                 (not (cddr e4)))
            (not (if-exprp (list* 'if e3 e4)))))
 
-
+;; rewrite rule to use during proof
 (property if-flat-equal-if (e :if-expr a :if-assign)
   (== (if-eval e a)
       (if-eval (if-flat e) a)))
@@ -153,6 +161,12 @@
   (validp (if-flat e) nil))
 
 ;; Main soundness theorem
+;; plan:
+check-validp e 
+=> validp (if-flat e) nil 
+=> if-eval (if-flat e) a 
+=> if-eval e a 
+
 (definec extend-assign (req :if-assign a :if-assign) :if-assign
   (match req
     (nil a)
@@ -256,7 +270,7 @@
   :hints (("Goal"
            :in-theory (enable assignedp lookup-atom))))
 
-;; similar
+;; if 
 (defthm lookup-var-true-preserved-by-extend-assign
   (implies (and (if-assignp req)
                 (if-assignp a)
@@ -286,6 +300,13 @@
 
 ;; if normalized n is valid with no assumptions
 ;; then it evals to true under any assumption
+;; logical core
+;; need property to show that adding an assignment that
+;; agrees with the environment does not change evaluation
+;; from this we know that for any (if x y z)
+;; if x known true -> check y 
+;; if x known false -> check z 
+;; if x unknown -> check both branches
 (property validp-nil-sound (n :norm-if-expr a :if-assign)
   (implies (validp n nil)
            (if-eval n a))
@@ -309,6 +330,8 @@
                             (n (if-flat e))
                             (a a))))))
 
+;; if the checker says the formula is valid, formula evaluates to true
+;; to prove, we need a theorem that talks about flattened expression
 (property check-validp-is-sound (e :if-expr a :if-assign)
   (implies (check-validp e)
            (if-eval e a))
@@ -321,19 +344,42 @@
                             (a a))))))
 
 ;; Q3f completeness witness
+;; proof sketch: 
+;; (not (check-validp e))
+;; => (not (validp (if-flat e) nil))
+;; => (not (if-eval (if-flat e) (counterexample-assign (if-flat e) nil)))
+;; => (not (if-eval e (counterexample-assign (if-flat e) nil)))
+
+;; given a normalized expr n and a partial assignment req
+;; if validp fails under req 
+;; walk through n and extend req only when needed 
+;; so that the final assignment makes n eval to false
+;; example:
+;; (if x true nil) this is not valid 
+;; start with empty req, x is not assigned, 
+;; validp(true, {x=true}) = true, still valid, try pair x with false 
+;; validp(false, {x=false}) = false, find a match that makes it invalid!
+;; assign x to false in the req, req = {x=false}
+;; return it
 (definec counterexample-assign (n :norm-if-expr req :if-assign) :if-assign
   (declare (xargs :consider-only-ccms ((if-flat-measure n))))
   (match n
+    ;; reached the end, we have a full witness
     (:if-atom req)
     (('if x y z)
+      ; if x is assigned, follow the branch that actually runs
      (if (assignedp x req)
          (if (lookup-atom x req)
              (counterexample-assign y req)
            (counterexample-assign z req))
+       ;; if the whole formula is not valid, then at least one branch is not valid 
+       ;; under some value of x. try pairing x with true, is it invalid now? if still
+       ;; valid, go to the other branch
        (if (not (validp y (acons x t req)))
            (counterexample-assign y (acons x t req))
          (counterexample-assign z (acons x nil req)))))))
 
+;; not shadowing
 (defthm lookup-var-acons-diff
   (implies (and (varp x)
                 (varp y)
@@ -345,6 +391,7 @@
   :hints (("Goal"
            :in-theory (enable lookup-var))))
 
+;; counterexample-assign respects existing assignment in req.
 (defthm lookup-atom-counterexample-assign-when-assigned
   (implies (and (if-atomp x)
                 (norm-if-exprp n)
@@ -357,6 +404,10 @@
            :do-not '(generalize eliminate-destructors fertilize)
            :induct (counterexample-assign n req))))
 
+;; we find an assignment that falsifies the evaluation given that n is not
+;; valid with req
+;; ban generalize, destructor, and fertilize so that it unfolds as per 
+;; the rules of the interpreter not in any algebraic form
 (defthm counterexample-assign-falsifies-validp
   (implies (and (norm-if-exprp n)
                 (if-assignp req)
@@ -367,6 +418,7 @@
            :do-not '(generalize eliminate-destructors fertilize)
            :induct (counterexample-assign n req))))
 
+;; checker works on flattened form
 (defthm check-validp-is-complete-flat
   (implies (and (if-exprp e)
                 (not (check-validp e)))
@@ -379,6 +431,9 @@
                             (req nil))))))
 
 ;; a failure => a counterexample
+;; if checker says "NOT valid" => there exists an assignment making it false
+;; to prove this, we need:
+;; checker works on flattened form 
 (property check-validp-is-complete (e :if-expr)
   (let ((a (counterexample-assign (if-flat e) nil)))
     (implies (not (check-validp e))

@@ -52,6 +52,7 @@
     (() ())
     ((e . es) (insert e (isort es)))))
 
+;; find all elements in a list that is smaller than a
 (definec less (a :all x :tl) :tl
   (match x
     (() ())
@@ -59,6 +60,7 @@
                   (cons e (less a es))
                 (less a es)))))
 
+;; find all elements in a list that is not smaller than a
 (definec notless (a :all x :tl) :tl
   (match x
     (() ())

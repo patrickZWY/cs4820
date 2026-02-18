@@ -17,6 +17,12 @@
 |#
 
 
+;; turn quicksort into insertion sort
+;; quicksort has three parts, make them into insertion sort
+;; generalize pivot and rest of the list
+;; always pushing isort inside
+;; finally prove a lemma about isort insert's preservation of well-orderedness
+
 
 
 

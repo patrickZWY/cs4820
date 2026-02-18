@@ -32,48 +32,79 @@
 -> bad-app nil [] [3,2,1,4,5]
 -> [3,2,1,4,5]
 
+;; permuting arguments, be careful with measure function
 |#
+
+#|
 (definec bad-app (x y acc :tl) :tl
   (match (list x y)
     ((nil nil) acc)
     ((& nil) (bad-app y x acc))
     ((nil (f . r)) (bad-app x r (cons f acc)))
     (& (bad-app x nil (bad-app acc nil y)))))
+|#
+#|
+B1 -> B2 x/y permuted 
+B2 -> B2 (but len of y decreases)
+B3 -> B1 (y became nil)
+B4 -> B1 y became nil 
+|#
 
 ; Q1a. We are using the definition on page 125
 #|
 (definec m-bad-app (x y :tl) :nat
   (+ (len x) (len y)))
 |#
+;; we need to ask acl2 to use our measure function
+#|
 (definec m-bad-app (x y :tl acc :all) :nat
   (match (list x y)
       ((nil nil) 0)
-      ((& nil) (+ 1 (len x)))
-      ((nil &) (len y))
-      (& (+ 2 (len acc) (len x)))))
+      ((& nil) (+ 1 (len x))) ; ('(0))
+      ((nil &) (len y)) 
+      (& (+ 2 (len acc) (len x))))) ;('(1)) biggest
+|#
+
+(definec m-bad-app (x y acc :tl) :lex 
+	 (declare (ignorable acc))
+	 (match (list x y)
+	     ((nil nil) 0)
+	     ((nil &) (len y))
+	     ((& nil) '(1))
+	     (& '(2))))
+
 
 ; in case 2, swap happens
 (property case1-terminate (x acc :tl)
   :hyps (and (consp x))
-  :body (< (m-bad-app nil x acc)
+  :body (l< (m-bad-app nil x acc)
 	   (m-bad-app x nil acc)))
 
 ; in case 3, keep recursing and pushing into acc
 (property case2-terminate (f :all acc r :tl)
-  :body (< (m-bad-app nil r (cons f acc))
+  :body (l< (m-bad-app nil r (cons f acc))
 	   (m-bad-app nil (cons f r) acc)))
 
 ; in case 4, inner recursive call decrements
 (property case3-terminate (x y acc :tl)
   :hyps (and (consp x) (consp y))
-  :body (< (m-bad-app acc nil y)
+  :body (l< (m-bad-app acc nil y)
 	   (m-bad-app x y acc)))
 
 ; in case 4, outer recursive call decreases
 (property case4-terminate (x y acc res :tl)
   :hyps (and (consp x) (consp y))
-  :body (< (m-bad-app x nil res)
+  :body (l< (m-bad-app x nil res)
 	   (m-bad-app x y acc)))
+
+(definec bad-app (x y acc :tl) :tl
+  (declare (xargs :measure (m-bad-app x y acc)))
+  (match (list x y)
+      ((nil nil) acc)
+    ((& nil) (bad-app y x acc))
+    ((nil (f . r)) (bad-app x r (cons f acc)))
+    (& (bad-app x nil (bad-app acc nil y)))))
+
 
 
 (property rev-cdr+car (x :cons)
