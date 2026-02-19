@@ -12,6 +12,7 @@
  the subject of your email submission is "CS 4820 HWK 4".
 
  The group members are:
+ Zheng Wangyuan
  Christopher Wright-Williams
 
 |#
