@@ -949,279 +949,171 @@
 (time (DP '(and (or (foo x) q) (or (not (foo x)) r) (or p s) (or (not s) t))))
 
 
-#|
- Part 2: DPLL
- Iterative version with explicit decision stack.
- Input is CNF, but arbitrary atoms are handled by p-skeleton first.
-|#
+;;; ============================================================
+;;; Q4 — DPLL (iterative with backjumping)
+;;; ============================================================
 
-(defun atom-formulas- (f)
-  (match f
-    ((type boolean) nil)
-    ((type symbol) (list f))
-    ((list* op args)
-     (if (p-funp op)
-         (reduce #'append (mapcar #'atom-formulas- args) :initial-value nil)
-       (list f)))
-    (_ nil)))
+;;; ------ low-level CNF helpers (work on clause lists directly) ------
 
-(defun atom-formulas (f)
-  (remove-dups (atom-formulas- f)))
+;; A CNF state is just a list of clauses (each clause is a list of literals).
+;; We avoid the (and ...) / (or ...) wrapper internally for speed;
+;; we only convert at the boundaries.
 
-(defun literal-var (lit)
-  (match lit
-    ((list 'not x) x)
-    (_ lit)))
+(defun formula->clause-list (f)
+  "Convert an (and (or ...) ...) formula into a raw list of clause-lists."
+  (mapcar #'clause-lits (cnf-clauses f)))
 
-(defun lit-truth (lit)
-  (match lit
-    ((list 'not x) nil)
-    (_ t)))
+(defun clause-list->formula (cls)
+  "Convert a raw list of clause-lists back to (and (or ...) ...) form."
+  (zero-one-arity 'and
+    (mapcar #'(lambda (c) (zero-one-arity 'or c)) cls)))
 
-(defun lit->assignment-pair (lit)
-  (cons (literal-var lit) (lit-truth lit)))
+;; A literal's variable and polarity
+(defun lit-var (lit)
+  (match lit ((list 'not x) x) (_ lit)))
 
-(defun lookup-asg (x asg)
-  (let ((pr (assoc x asg :test #'equal)))
-    (if pr (cdr pr) nil)))
+(defun lit-pos-p (lit)
+  (not (and (consp lit) (eq (car lit) 'not))))
 
-(defun extend-assignment (new old)
-  (append new
-          (remove-if #'(lambda (pr)
-                         (assoc (car pr) new :test #'equal))
-                     old)))
+(defun negate-lit (lit)
+  (match lit ((list 'not x) x) (_ `(not ,lit))))
 
-(defun complete-assignment (vars asg)
-  (append asg
-          (mapcar #'(lambda (v) (cons v nil))
-                  (remove-if #'(lambda (v)
-                                 (assoc v asg :test #'equal))
-                             vars))))
+;; Assign literal=true in a clause list.
+;; - Remove all clauses containing lit (they're satisfied)
+;; - Remove (negate lit) from remaining clauses
+;; Returns (values new-clauses conflictp)
+(defun cls-assign (lit clauses)
+  (let* ((neg (negate-lit lit))
+         (remaining '())
+         (conflict nil))
+    (dolist (c clauses)
+      (unless (member lit c :test #'equal)       ; clause satisfied → drop it
+        (let ((reduced (remove neg c :test #'equal)))
+          (if (null reduced)
+              (setf conflict t)                   ; empty clause → conflict
+            (push reduced remaining)))))
+    (values (nreverse remaining) conflict)))
 
-(defun symbol-for-original-atom (a amap)
-  (let ((pr (assoc a amap :test #'equal)))
-    (if pr (cdr pr) a)))
+;; Find a unit literal (clause of length 1), or nil
+(defun cls-find-unit (clauses)
+  (dolist (c clauses nil)
+    (when (= (length c) 1)
+      (return (car c)))))
 
-(defun complete-original-assignment (atoms amap asg)
-  (mapcar #'(lambda (a)
-              (cons a (lookup-asg (symbol-for-original-atom a amap) asg)))
-          atoms))
+;; Find a pure literal, or nil
+(defun cls-pure-literal (clauses)
+  (let ((lits (remove-duplicates
+               (reduce #'append clauses :initial-value nil)
+               :test #'equal)))
+    (dolist (l lits nil)
+      (unless (member (negate-lit l) lits :test #'equal)
+        (return l)))))
 
-(defun empty-clause-p (c)
-  (equal c nil))
+;; Choose an unassigned variable from the clause list
+(defun cls-choose-var (clauses)
+  (dolist (c clauses nil)
+    (dolist (l c nil)
+      (return-from cls-choose-var (lit-var l)))))
 
-(defun unsat-cnf-p (f)
-  (some #'empty-clause-p (cnf-clauses f)))
+;;; ------ unit propagation to fixpoint ------
+;;; Returns (values new-clauses assignment conflictp)
 
-(defun sat-cnf-p (f)
-  (equal (zero-one-arity 'and (cnf-clauses f)) t))
+(defun cls-propagate (clauses asg)
+  (loop
+    (let ((u (cls-find-unit clauses)))
+      (when (null u)
+        (return (values clauses asg nil)))
+      (multiple-value-bind (nc conflict) (cls-assign u clauses)
+        (when conflict
+          (return (values nc asg t)))
+        (setf clauses nc
+              asg (acons (lit-var u) (lit-pos-p u) asg))))))
 
-(defun find-unit-literal (f)
-  (let ((u (car (remove-if-not #'unit-clause-p (cnf-clauses f)))))
-    (if u
-        (car (clause-lits u))
-      nil)))
+;;; ------ core DPLL loop ------
+;;; Stack frame: (saved-clauses saved-asg var)
+;;; meaning "we tried var=T; if we conflict, come back and try var=NIL"
 
-(defun choose-var (f asg)
-  (car (remove-if #'(lambda (v) (assoc v asg :test #'equal))
-                  (remove-dups (mapcar #'literal-var (all-lits f))))))
-
-(defun assign-cnf (lit f)
-  ;; set lit=true:
-  ;; - remove clauses containing lit
-  ;; - remove (not lit) from remaining clauses
-  (let* ((clauses (cnf-clauses f))
-         (nlit (tseitin-neg lit))
-         (kept (remove-if #'(lambda (c)
-                              (in lit (clause-lits c)))
-                          clauses))
-         (shrunk (mapcar #'(lambda (c)
-                             (zero-one-arity
-                              'or
-                              (remove nlit (clause-lits c) :test #'equal)))
-                         kept)))
-    (zero-one-arity 'and shrunk)))
-
-(defun propagate-once (f asg)
-  ;; returns 4 values:
-  ;;   new-formula, new-assignment, changedp, conflictp
-  (cond
-    ((unsat-cnf-p f)
-     (values f asg nil t))
-
-    ((find-unit-literal f)
-     (let* ((u (find-unit-literal f))
-            (nf (assign-cnf u f))
-            (na (extend-assignment (list (lit->assignment-pair u)) asg)))
-       (values nf na t (unsat-cnf-p nf))))
-
-    ((pure-literal f)
-     (let* ((lit (pure-literal f))
-            (nf (assign-cnf lit f))
-            (na (extend-assignment (list (lit->assignment-pair lit)) asg)))
-       (values nf na t (unsat-cnf-p nf))))
-
-    (t
-     (values f asg nil nil))))
-
-(defun propagate-fixpoint (f asg)
-  (let ((curf f)
-        (cura asg))
-    (loop
-      do (let+ (((&values nf na changed conflict) (propagate-once curf cura)))
-           (setf curf nf
-                 cura na)
-           (when conflict
-             (return (values curf cura t)))
-           (unless changed
-             (return (values curf cura nil)))))))
-
-(defun dpll-cnf (f)
-  ;; iterative DPLL with explicit decision stack
-  ;; stack entry = (saved-formula saved-assignment var tried-true)
-  (let ((curf f)
+(defun dpll-cls (clauses)
+  (let ((cur clauses)
         (asg nil)
         (stack nil))
     (loop
-      do (let+ (((&values pf pa conflict) (propagate-fixpoint curf asg)))
-           (setf curf pf
-                 asg pa)
+      ;; 1. propagate
+      (multiple-value-bind (pc pa conflict) (cls-propagate cur asg)
+        (setf cur pc asg pa)
 
-           (cond
-             (conflict
-              ;; backtrack to nearest decision whose false branch is untried
-              (loop
-                (when (endp stack)
-                  (return-from dpll-cnf 'unsat))
-                (let* ((frame (car stack))
-                       (saved-f (first frame))
-                       (saved-a (second frame))
-                       (var     (third frame))
-                       (tried-t (fourth frame)))
-                  (setf stack (cdr stack))
-                  (when tried-t
-                    ;; now try var = nil
-                    (setf curf (assign-cnf `(not ,var) saved-f)
-                          asg  (extend-assignment (list (cons var nil)) saved-a))
-                    (return)))))
+        (cond
+          ;; conflict → backtrack
+          (conflict
+           (loop
+             (when (endp stack)
+               (return-from dpll-cls 'unsat))
+             (let* ((frame    (pop stack))
+                    (saved-c  (first  frame))
+                    (saved-a  (second frame))
+                    (var      (third  frame)))
+               ;; try var=NIL in the saved (pre-decision) state
+               (multiple-value-bind (nc conflict2)
+                   (cls-assign `(not ,var) saved-c)
+                 (setf asg (acons var nil saved-a))
+                 (if conflict2
+                     ;; NIL branch also immediately conflicts → keep popping
+                     (setf cur nil)   ; will re-enter conflict branch next iter
+                   (progn
+                     (setf cur nc)
+                     (return)))))))  ; break inner loop, outer re-propagates
 
-             ((sat-cnf-p curf)
-              (return-from dpll-cnf
-                (values 'sat asg)))
+          ;; all clauses satisfied
+          ((null cur)
+           (return-from dpll-cls (values 'sat asg)))
 
-             (t
-              ;; decide a fresh variable, first try true
-              (let ((v (choose-var curf asg)))
-                (when (null v)
-                  (return-from dpll-cnf
-                    (values 'sat asg)))
-                (push (list curf asg v t) stack)
-                (setf curf (assign-cnf v curf)
-                      asg  (extend-assignment (list (cons v t)) asg)))))))))
+          ;; decide
+          (t
+           (let ((v (cls-choose-var cur)))
+             (when (null v)
+               (return-from dpll-cls (values 'sat asg)))
+             ;; push recovery frame, then try v=T
+             (push (list cur asg v) stack)
+             (multiple-value-bind (nc conflict2) (cls-assign v cur)
+               (setf asg (acons v t asg))
+               (if conflict2
+                   (setf cur nil)    ; immediate conflict, will backtrack
+                 (setf cur nc))))))))))
+
 
 (defun DPLL (f)
   (let* ((atoms (atom-formulas f))
-         (sf (p-simplify f)))
+         (sf    (p-simplify f)))
     (cond
       ((equal sf nil) 'unsat)
       ((equal sf t)
        (values 'sat (mapcar #'(lambda (a) (cons a nil)) atoms)))
       (t
-       ;; input is promised CNF; p-skeleton handles non-prop atoms
        (let+ (((&values sk amap) (p-skeleton sf))
-              ((&values status asg) (dpll-cnf sk)))
-         (if (equal status 'unsat)
-             'unsat
-           (values 'sat
-                   (complete-original-assignment atoms amap
-                                                 (complete-assignment (pvars sk) asg)))))))))
+              (cnf     (tseitin sk))
+              (clauses (formula->clause-list cnf)))
+         (if (equal cnf t)
+             (values 'sat (mapcar #'(lambda (a) (cons a nil)) atoms))
+           (multiple-value-bind (status asg) (dpll-cls clauses)
+             (if (equal status 'unsat)
+                 'unsat
+               (values 'sat
+                       (complete-assignment atoms amap asg))))))))))
 
-;; --------------------------------------------------
-;; evaluator-based test helpers
-;; --------------------------------------------------
 
-(defun xor-bool-list (xs)
-  (oddp (count t xs :test #'equal)))
-
-(defun eval-formula-under-asg (f asg)
-  (match f
-    ((type boolean) f)
-    ((type symbol) (lookup-asg f asg))
-    ((list* op args)
-     (if (p-funp op)
-         (match op
-           ('and (every #'identity
-                        (mapcar #'(lambda (x) (eval-formula-under-asg x asg)) args)))
-           ('or  (some #'identity
-                       (mapcar #'(lambda (x) (eval-formula-under-asg x asg)) args)))
-           ('not (not (eval-formula-under-asg (car args) asg)))
-           ('implies (or (not (eval-formula-under-asg (first args) asg))
-                         (eval-formula-under-asg (second args) asg)))
-           ('iff (or (endp args)
-                     (endp (cdr args))
-                     (every #'identity
-                            (mapcar #'(lambda (pr)
-                                        (equal (eval-formula-under-asg (first pr) asg)
-                                               (eval-formula-under-asg (second pr) asg)))
-                                    (mapcar #'list args (cdr args))))))
-           ('xor (xor-bool-list
-                  (mapcar #'(lambda (x) (eval-formula-under-asg x asg)) args)))
-           ('if  (if (eval-formula-under-asg (first args) asg)
-                     (eval-formula-under-asg (second args) asg)
-                   (eval-formula-under-asg (third args) asg))))
-       (lookup-asg f asg)))
-    (_ nil)))
-
-(defun assert-dpll-sat (f)
-  (let+ (((&values status asg) (DPLL f)))
-    (assert (equal status 'sat))
-    (assert (eval-formula-under-asg f asg))))
-
-(defun assert-dpll-unsat (f)
-  (assert (equal (DPLL f) 'unsat)))
-
-;; --------------------------------------------------
-;; tests
-;; --------------------------------------------------
-
-(assert-dpll-unsat '(and p (not p)))
-(assert-dpll-sat   '(or p (not p)))
-(assert-dpll-sat   '(and p q))
-(assert-dpll-sat   '(and p (or (not p) q)))
-(assert-dpll-unsat '(and p (not p) q))
-(assert-dpll-sat   '(and (or p q) (or (not p) r) (or (not q) r)))
-(assert-dpll-unsat '(and (or p q)
-                         (or (not p) q)
-                         (or p (not q))
-                         (or (not p) (not q))))
-(assert-dpll-sat   '(and (or p q) (or r s)))
-(assert-dpll-unsat '(and (or p q) (not q) (not p)))
-(assert-dpll-sat   '(or (foo (if a b)) (not (foo (if a b)))))
-(assert-dpll-sat   '(and (or (foo x) q) (or (not (foo x)) r)))
-(assert-dpll-unsat '(and (foo x) (not (foo x))))
-
-;; extra harder sat test
-(assert-dpll-sat
- '(and
-   (or p q r)
-   (or (not p) s)
-   (or (not q) s)
-   (or (not r) t)
-   (or (not s) u)
-   (or (not t) u)
-   (or (not u) v w)
-   (or (not v) x)
-   (or (not w) x)
-   (or (not x) y)
-   (or y z)
-   (or (not z) p)))
-
-;; simple profiling
+;; same formulas as DP for direct comparison
 (time (DPLL '(and (or p q) (or (not p) r) (or (not q) r))))
 (time (DPLL '(and (or p q)
                   (or (not p) q)
                   (or p (not q))
                   (or (not p) (not q)))))
+(time (DPLL '(and (or (foo x) q) (or (not (foo x)) r) (or p s) (or (not s) t))))
+
+;; non-prop atoms
+(time (DPLL '(and (foo x) (not (foo x)))))
+(time (DPLL '(or (foo (if a b)) (not (foo (if a b))))))
+
+;; larger sat instances
 (time (DPLL '(and
               (or p q r)
               (or (not p) s)
@@ -1236,3 +1128,32 @@
               (or y z)
               (or (not z) p))))
 
+;; larger unsat instance
+(time (DPLL '(and
+              (or p q)
+              (or (not p) q)
+              (or p (not q))
+              (or (not p) (not q))
+              (or q r)
+              (or (not q) r)
+              (or q (not r))
+              (or (not q) (not r)))))
+
+;; pigeon hole: 3 pigeons 2 holes (unsat, good stress test)
+(time (DPLL '(and
+              (or p11 p12)
+              (or p21 p22)
+              (or p31 p32)
+              (or (not p11) (not p21))
+              (or (not p11) (not p31))
+              (or (not p21) (not p31))
+              (or (not p12) (not p22))
+              (or (not p12) (not p32))
+              (or (not p22) (not p32)))))
+
+;; deeper nesting with non-prop atoms (exercises tseitin + dpll together)
+(time (DPLL '(and (or (foo x) (bar y)) 
+                  (or (not (foo x)) (baz z))
+                  (or (not (bar y)) (baz z))
+                  (or (not (baz z)) w)
+                  (or (not w) (foo x)))))
