@@ -162,10 +162,11 @@
           ))
 
 (defun 3x3-magic-square-backward-diagonal-sum (sum-var)
-     `(= ,sum-var (+ . ,(get-3x3-magic-square-var 0 2)
-                         ,(get-3x3-magic-square-var 1 1)
-                         ,(get-3x3-magic-square-var 2 0)
-                          )))
+  (let ((diagonal-squares
+         (list (get-3x3-magic-square-var 0 2)
+               (get-3x3-magic-square-var 1 1)
+               (get-3x3-magic-square-var 2 0))))
+    `(= ,sum-var (+ . ,diagonal-squares))))
 
 
 (defun 3x3-magic-square-non-trivial ()
@@ -193,9 +194,151 @@
               (3x3-magic-square-non-trivial))
               
 (check-sat)
-
 (solver-pop)
-
 (solver-reset)
 
-(defun sudoku-row-sum ())
+(defun sudoku-cell-var (row col val)
+  (intern (concatenate 'string "X" (write-to-string (+ col (* row 9))) "_" (write-to-string val))))
+
+;; I have provided some utilities for pretty-printing Sudoku solutions
+;; below.
+
+(defun assoc-equal (x a)
+  (assoc x a :test #'equal))
+
+;; Given a solution that is an alist from cell vars to booleans, get
+;; the assigned value for the cell at the given row and column, or nil
+;; if it is unassigned.
+(defun get-square-value (soln row col)
+  (block outer
+    (loop for i from 1 to 9
+          do (when (and (cdr (assoc-equal (sudoku-cell-var row col i) soln))
+                        (cadr (assoc-equal (sudoku-cell-var row col i) soln)))
+               (return-from outer i)))
+    nil))
+
+;; This pretty-prints a Sudoku solution, using `get-square-value` to
+;; handle the task of getting the value of a cell from the solution
+;; representation used.
+(defun pretty-print-3x3-sudoku-solution (soln)
+  (loop for row below 9
+        do (progn (terpri)
+                  (loop for col below 9
+                        do (progn (format t "~A " (get-square-value soln row col))
+                                  (when (equal (mod col 3) 2) (format t "  "))))
+                  (when (equal (mod row 3) 2) (terpri)))))
+
+;; Here's an example starting board. It has a unique solution.
+(defconstant *sudoku-example-board*
+  '(7 _ _   _ 1 _   _ _ _
+    _ 1 _   _ _ 3   7 _ 8
+    _ 5 3   _ _ _   _ _ 4
+
+    5 _ 9   3 _ _   _ _ 2
+    4 _ 1   2 6 _   3 7 _
+    _ _ 7   _ 8 5   9 4 _
+
+    2 7 _   _ 9 4   _ 3 _
+    8 _ _   5 _ 1   _ 6 _
+    _ 3 _   _ _ 2   4 5 _))
+
+;; Here's its solution.
+#|
+ 7 4 8   9 1 6   5 2 3
+ 6 1 2   4 5 3   7 9 8
+ 9 5 3   7 2 8   6 1 4
+
+ 5 6 9   3 4 7   1 8 2
+ 4 8 1   2 6 9   3 7 5
+ 3 2 7   1 8 5   9 4 6
+
+ 2 7 5   6 9 4   8 3 1
+ 8 9 4   5 3 1   2 6 7
+ 1 3 6   8 7 2   4 5 9
+|#
+
+(defun sudoku-cell-vars (row col)
+  (loop for val from 1 to 9
+      collect (sudoku-cell-var row col val)))
+
+(defun sudoku-exactly-one (vars)
+  `(and ((_ at-least 1) ,@vars)
+        ((_ at-most 1) ,@vars)))
+
+(defun sudoku-cell-constraints ()
+  (cons 'and 
+         (loop for row below 9 append
+            (loop for col below 9
+              collect (sudoku-exactly-one
+                        (sudoku-cell-vars row col))))))
+
+(defun sudoku-row-value-vars (row val)
+  (loop for col below 9
+      collect (sudoku-cell-var row col val)))
+
+(defun sudoku-row-constraints ()
+  (cons 'and
+      (loop for row below 9 append
+        (loop for val from 1 to 9
+          collect (sudoku-exactly-one
+                    (sudoku-row-value-vars row val))))))
+
+(defun sudoku-col-value-vars (col val)
+  (loop for row below 9
+    collect (sudoku-cell-var row col val)))
+
+(defun sudoku-col-constraints ()
+  (cons 'and
+      (loop for col below 9 append
+        (loop for val from 1 to 9
+            collect (sudoku-exactly-one
+                      (sudoku-col-value-vars col val))))))
+
+(defun sudoku-box-value-vars (box-row box-col val)
+    (loop for row from (* 3 box-row) below (+ (* 3 box-row) 3) append
+        (loop for col from (* 3 box-col) below (+ (* 3 box-col) 3)
+            collect (sudoku-cell-var row col val))))
+
+(defun sudoku-box-constraints ()
+  (cons 'and
+      (loop for box-row below 3 append
+          (loop for box-col below 3 append
+              (loop for val from 1 to 9
+                  collect (sudoku-exactly-one
+                              (sudoku-box-value-vars box-row box-col val)))))))
+
+(defun sudoku-starting-board-constraints (input-grid)
+    (cons 'and
+        (loop for entry in input-grid 
+              for idx from 0
+              unless (equal entry '_)
+                collect (sudoku-cell-var (floor idx 9)
+                                          (mod idx 9)
+                                          entry))))
+
+(defun sudoku-var-specs ()
+  (loop for row below 9 append
+      (loop for col below 9 append
+          (loop for val from 1 to 9 append
+             `(,(sudoku-cell-var row col val) :bool)))))
+
+(defun solve-sudoku (input-grid)
+  (let ((var-specs (sudoku-var-specs)))
+    (solver-push)
+    (z3-assert-fn var-specs (sudoku-cell-constraints))
+    (z3-assert-fn var-specs (sudoku-row-constraints))
+    (z3-assert-fn var-specs (sudoku-col-constraints))
+    (z3-assert-fn var-specs (sudoku-box-constraints))
+    (z3-assert-fn var-specs (sudoku-starting-board-constraints input-grid))
+    (let ((res (check-sat)))
+      (prog1
+          (if (or (equal res 'SAT)
+                  (equal res :SAT)
+                  (equal res 'sat)
+                  (equal res :sat))
+                (get-model-as-assignment)
+                'UNSAT)
+              (solver-pop)))))
+
+;; This should print out the solution given above.
+(pretty-print-3x3-sudoku-solution (time (solve-sudoku *sudoku-example-board*)))
