@@ -197,3 +197,5 @@
 (solver-pop)
 
 (solver-reset)
+
+(defun sudoku-row-sum ())
