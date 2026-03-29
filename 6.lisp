@@ -356,6 +356,21 @@
 (pretty-print-3x3-sudoku-solution (time (solve-sudoku *sudoku-example-board*)))
 
 
+;; unruly is NP-hard but it is easy to encode hehe
+;; basically encode it like we encode sudoku
+;; 8x8 board
+;; then we only have black or white so i encode black as 1 and white as 2
+;; then we encode constraints: each row or col must have 4 black and 4 white
+;; and no consecutive 3 for black or white is even easier, we literally start
+;; counting one by one until there is not enough items on the same row (like col 6)
+;; finally we encode the board and boom it is done
+;; i don't want to write too many examples so one example you can just have everything
+;; as empty so we start with an empty board
+;; second instance we can have an obviously unsat board with consecutive 3 white or black
+;; for a working example, see the board i supplied as example, it is taken from the website
+;; so it definitely works and our solution gives an answer
+;; chatgpt usage about 10 percent
+
 
 (defun unruly-cell-var (row col val)
   (intern (concatenate 'string "X" (write-to-string (+ col (* row 8))) "_" (write-to-string val))))
