@@ -83,32 +83,14 @@
 (solver-pop) 
 
 (defun get-3x3-magic-square-var (row col)
-  ;; See the Common Lisp HyperSpec for more information about any
-  ;; Common Lisp function.
-  ;; For example, the documentation for `concatenate` can be found at
-  ;; http://clhs.lisp.se/Body/f_concat.htm
-  ;; You can also ask SBCL for documentation for a function
-  ;; by running (describe #'<function-name>) in the REPL.
-  ;; e.g. (describe #'concatenate)
   (intern (concatenate 'string "X" (write-to-string (+ col (* row 3))))))
-;;
 
 (get-3x3-magic-square-var 0 0)
 
 (defun 3x3-magic-square-row-sum (row sum-var)
-  ;; I'm going to use the loop macro here. This is a very powerful
-  ;; macro that allows us to avoid writing helper functions just to
-  ;; perform basic loops.
-  ;; See the HyperSpec and
-  ;; https://gigamonkeys.com/book/loop-for-black-belts.html for more
-  ;; information.
-  ;; We want to first generate the variables corresponding to each
-  ;; cell in this row.
   (let ((row-squares
          (loop for col below 3
                collect (get-3x3-magic-square-var row col))))
-    ;; Then, we want to say that the sum of the squares is equal to
-    ;; whatever the sum-var is.
     `(= ,sum-var (+ . ,row-squares))))
 
 (3x3-magic-square-row-sum 0 'S)
@@ -200,6 +182,8 @@
 (defun sudoku-cell-var (row col val)
   (intern (concatenate 'string "X" (write-to-string (+ col (* row 9))) "_" (write-to-string val))))
 
+
+
 ;; I have provided some utilities for pretty-printing Sudoku solutions
 ;; below.
 
@@ -216,6 +200,8 @@
                         (cadr (assoc-equal (sudoku-cell-var row col i) soln)))
                (return-from outer i)))
     nil))
+
+
 
 ;; This pretty-prints a Sudoku solution, using `get-square-value` to
 ;; handle the task of getting the value of a cell from the solution
@@ -242,6 +228,8 @@
     8 _ _   5 _ 1   _ 6 _
     _ 3 _   _ _ 2   4 5 _))
 
+
+
 ;; Here's its solution.
 #|
  7 4 8   9 1 6   5 2 3
@@ -261,9 +249,15 @@
   (loop for val from 1 to 9
       collect (sudoku-cell-var row col val)))
 
+
+
 (defun sudoku-exactly-one (vars)
   `(and ((_ at-least 1) ,@vars)
         ((_ at-most 1) ,@vars)))
+
+
+
+
 
 (defun sudoku-cell-constraints ()
   (cons 'and 
@@ -272,9 +266,12 @@
               collect (sudoku-exactly-one
                         (sudoku-cell-vars row col))))))
 
+
 (defun sudoku-row-value-vars (row val)
   (loop for col below 9
       collect (sudoku-cell-var row col val)))
+
+
 
 (defun sudoku-row-constraints ()
   (cons 'and
@@ -283,9 +280,12 @@
           collect (sudoku-exactly-one
                     (sudoku-row-value-vars row val))))))
 
+
+
 (defun sudoku-col-value-vars (col val)
   (loop for row below 9
     collect (sudoku-cell-var row col val)))
+
 
 (defun sudoku-col-constraints ()
   (cons 'and
@@ -293,6 +293,8 @@
         (loop for val from 1 to 9
             collect (sudoku-exactly-one
                       (sudoku-col-value-vars col val))))))
+
+
 
 (defun sudoku-box-value-vars (box-row box-col val)
     (loop for row from (* 3 box-row) below (+ (* 3 box-row) 3) append
@@ -307,6 +309,8 @@
                   collect (sudoku-exactly-one
                               (sudoku-box-value-vars box-row box-col val)))))))
 
+
+
 (defun sudoku-starting-board-constraints (input-grid)
     (cons 'and
         (loop for entry in input-grid 
@@ -316,11 +320,15 @@
                                           (mod idx 9)
                                           entry))))
 
+
+
 (defun sudoku-var-specs ()
   (loop for row below 9 append
       (loop for col below 9 append
           (loop for val from 1 to 9 append
              `(,(sudoku-cell-var row col val) :bool)))))
+
+
 
 (defun solve-sudoku (input-grid)
   (let ((var-specs (sudoku-var-specs)))
@@ -340,5 +348,144 @@
                 'UNSAT)
               (solver-pop)))))
 
+
+
+
+
 ;; This should print out the solution given above.
 (pretty-print-3x3-sudoku-solution (time (solve-sudoku *sudoku-example-board*)))
+
+
+
+(defun unruly-cell-var (row col val)
+  (intern (concatenate 'string "X" (write-to-string (+ col (* row 8))) "_" (write-to-string val))))
+
+(defun get-unruly-value (soln row col)
+    (cond
+      ((cadr (assoc-equal (unruly-cell-var row col 1) soln)) 1)
+      ((cadr (assoc-equal (unruly-cell-var row col 2) soln)) 2)
+      (t '_)))
+
+(defun pretty-print-unruly (soln)
+  (loop for row below 8 do
+      (progn
+          (terpri)
+          (loop for col below 8 do
+              (format t "~A " (get-unruly-value soln row col))))))
+
+(defun unruly-cell-vars (row col)
+  (loop for val from 1 to 2
+      collect (unruly-cell-var row col val)))
+
+
+(defconstant *unruly-example-board*
+  '(_ _ _ _  _ _ _ 1
+    1 _ 1 2  _ 2 _ 1
+    _ _ _ 2  _ 2 _ _ 
+    _ _ _ _  _ _ _ 2
+    1 1 _ _  _ _ _ _ 
+    1 _ 2 _  _ 1 _ _
+    _ _ _ _  _ _ 1 _ 
+    _ 2 _ _  _ _ 2 _
+  ))
+
+(defun unruly-exactly-one (vars)
+  `(and ((_ at-least 1) ,@vars)
+        ((_ at-most 1) ,@vars)))
+
+(defun unruly-exactly-four (vars)
+  `(and ((_ at-least 4) ,@vars)
+        ((_ at-most 4) ,@vars)))
+
+
+;; each cell in unruly can only have 1 or 2
+(defun unruly-cell-constraints ()
+  (cons 'and
+          (loop for row below 8 append
+            (loop for col below 8
+              collect (unruly-exactly-one
+                        (unruly-cell-vars row col))))))
+
+
+;; each row in unruly must have 4 1s and 4 2s
+(defun unruly-row-value-vars (row val)
+  (loop for col below 8
+      collect (unruly-cell-var row col val)))
+
+(defun unruly-row-constraints ()
+  (cons 'and
+    (loop for row below 8 append
+      (loop for val from 1 to 2
+        collect (unruly-exactly-four
+                  (unruly-row-value-vars row val))))))
+
+
+(defun unruly-col-value-vars (col val)
+  (loop for row below 8
+    collect (unruly-cell-var row col val)))
+
+(defun unruly-col-constraints ()
+  (cons 'and
+      (loop for col below 8 append
+        (loop for val from 1 to 2
+            collect (unruly-exactly-four
+                      (unruly-col-value-vars col val))))))
+
+;; for consecutive 3s, row 0 to 5 cannot have consecutive
+(defun consecutive-row-constraints ()
+  (cons 'and
+      (loop for row below 8 append
+        (loop for col from 0 to 5 append
+            (list
+                `(not (and ,(unruly-cell-var row col 1)
+                           ,(unruly-cell-var row (+ col 1) 1)
+                           ,(unruly-cell-var row (+ col 2) 1)))
+                `(not (and ,(unruly-cell-var row col 2)
+                           ,(unruly-cell-var row (+ col 1) 2)
+                           ,(unruly-cell-var row (+ col 2) 2))))))))
+
+(defun consecutive-col-constraints ()
+  (cons 'and
+      (loop for col below 8 append
+        (loop for row from 0 to 5 append
+            (list
+                `(not (and ,(unruly-cell-var row col 1)
+                           ,(unruly-cell-var (+ row 1) col 1)
+                           ,(unruly-cell-var (+ row 2) col 1)))
+                `(not (and ,(unruly-cell-var row col 2)
+                           ,(unruly-cell-var (+ row 1) col 2)
+                           ,(unruly-cell-var (+ row 2) col 2))))))))
+
+(defun unruly-starting-board-constraints (input-grid)
+    (cons 'and
+        (loop for entry in input-grid
+              for idx from 0
+              unless (equal entry '_)
+                collect (unruly-cell-var (floor idx 8)
+                                         (mod idx 8)
+                                         entry))))
+
+(defun unruly-var-specs ()
+  (loop for row below 8 append 
+    (loop for col below 8 append
+      (loop for val from 1 to 2 append
+        `(,(unruly-cell-var row col val) :bool)))))
+
+(defun solve-unruly (input-grid)
+  (let ((var-specs (unruly-var-specs)))
+      (solver-push)
+      (z3-assert-fn var-specs (unruly-cell-constraints))
+      (z3-assert-fn var-specs (unruly-row-constraints))
+      (z3-assert-fn var-specs (unruly-col-constraints))
+      (z3-assert-fn var-specs (consecutive-row-constraints))
+      (z3-assert-fn var-specs (consecutive-col-constraints))
+      (z3-assert-fn var-specs (unruly-starting-board-constraints input-grid))
+        (let ((res (check-sat)))
+            (prog1 
+                (if (member res '(SAT :SAT sat :sat))
+                    (get-model-as-assignment)
+                    'UNSAT)
+                  (solver-pop)))))
+
+
+(pretty-print-unruly (time (solve-unruly *unruly-example-board*)))
