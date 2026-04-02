@@ -57,16 +57,14 @@
 		  (if-exprp b)
 		  (if-exprp c))
      (< (if-flat-measure b)
-	(if-flat-measure (list 'if a b c))))
-  :hints (("Goal" :in-theory (enable if-flat-measure))))
+	(if-flat-measure (list 'if a b c)))))
 
 (defthm if-flat-measure-atomic-recurse-c
   (implies (and (if-atomp a)
                 (if-exprp b)
                 (if-exprp c))
            (< (if-flat-measure c)
-              (if-flat-measure (list 'if a b c))))
-  :hints (("Goal" :in-theory (enable if-flat-measure))))
+              (if-flat-measure (list 'if a b c)))))
 
 ;; Case 2: Pullout transformation decreases measure
 (defthm if-flat-measure-pullout-decreases
@@ -78,8 +76,7 @@
            (< (if-flat-measure (list 'if d
                                      (list 'if e b c)
                                      (list 'if f b c)))
-              (if-flat-measure (list 'if (list 'if d e f) b c))))
-  :hints (("Goal" :in-theory (enable if-flat-measure))))
+              (if-flat-measure (list 'if (list 'if d e f) b c)))))
 
 ; check the first element of non-atom, if it is an atom, then recurse
 ; down to the end to check their conditional position
@@ -184,10 +181,7 @@
                 (booleanp v)
                 (equal (lookup-var x a) v))
            (equal (if-eval e (acons x v a))
-                  (if-eval e a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval lookup-atom)
-           :induct (if-eval e a))))
+                  (if-eval e a))))
 
 ;; a more specific form than before
 (defthm if-eval-acons-true-when-lookup
@@ -196,13 +190,7 @@
                 (varp x)
                 (lookup-var x a))
            (equal (if-eval e (acons x t a))
-                  (if-eval e a)))
-  :hints (("Goal"
-           :use ((:instance if-eval-acons-same-when-lookup
-                            (e e)
-                            (a a)
-                            (x x)
-                            (v t))))))
+                  (if-eval e a))))
 
 ;; a specific form like previous
 (defthm if-eval-acons-false-when-lookup
@@ -211,13 +199,7 @@
                 (varp x)
                 (not (lookup-var x a)))
            (equal (if-eval e (acons x nil a))
-                  (if-eval e a)))
-  :hints (("Goal"
-           :use ((:instance if-eval-acons-same-when-lookup
-                            (e e)
-                            (a a)
-                            (x x)
-                            (v nil))))))
+                  (if-eval e a))))
 
 ;; similar to before but in a different form 
 (defthm if-eval-cons-cons-true-when-lookup
@@ -226,13 +208,7 @@
                 (varp x)
                 (lookup-var x a))
            (equal (if-eval e (cons (cons x t) a))
-                  (if-eval e a)))
-  :hints (("Goal"
-           :in-theory (enable acons)
-           :use ((:instance if-eval-acons-true-when-lookup
-                            (e e)
-                            (a a)
-                            (x x))))))
+                  (if-eval e a))))
 
 ;; similar to before
 (defthm if-eval-cons-list-false-when-lookup
@@ -241,21 +217,13 @@
                 (varp x)
                 (not (lookup-var x a)))
            (equal (if-eval e (cons (cons x nil) a))
-                  (if-eval e a)))
-  :hints (("Goal"
-           :in-theory (enable acons)
-           :use ((:instance if-eval-acons-false-when-lookup
-                            (e e)
-                            (a a)
-                            (x x))))))
+                  (if-eval e a))))
 
 (defthmd if-eval-var-is-lookup-var
   (implies (and (varp x)
                 (if-assignp a))
            (equal (if-eval x a)
-                  (lookup-var x a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval lookup-atom))))
+                  (lookup-var x a))))
 
 ;; similar to before but now adding to assignments
 (defthm lookup-var-extend-assign-when-assigned
@@ -264,10 +232,7 @@
                 (if-assignp a)
                 (consp (assoc-equal x req)))
            (equal (lookup-var x (extend-assign req a))
-                  (lookup-var x req)))
-  :hints (("Goal"
-           :in-theory (enable extend-assign lookup-var)
-           :induct (lookup-var x req))))
+                  (lookup-var x req))))
 
 ;; similar 
 (defthm lookup-atom-extend-assign-when-assigned
@@ -276,9 +241,7 @@
                 (if-assignp a)
                 (assignedp x req))
            (equal (lookup-atom x (extend-assign req a))
-                  (lookup-atom x req)))
-  :hints (("Goal"
-           :in-theory (enable assignedp lookup-atom))))
+                  (lookup-atom x req))))
 
 ;; if 
 (defthm lookup-var-true-preserved-by-extend-assign
@@ -286,10 +249,7 @@
                 (if-assignp a)
                 (varp x)
                 (lookup-var x req))
-           (lookup-var x (extend-assign req a)))
-  :hints (("Goal"
-           :in-theory (enable extend-assign lookup-var)
-           :induct (extend-assign req a))))
+           (lookup-var x (extend-assign req a))))
 
 ;; Normalize if-eval on a concrete if-shape so induction on validp can
 ;; finish by rewriting instead of launching nested inductions on if-eval.
@@ -305,9 +265,7 @@
            (equal (if-eval n a)
                   (if (if-eval (cadr n) a)
                       (if-eval (caddr n) a)
-                    (if-eval (cadddr n) a))))
-  :hints (("Goal"
-           :in-theory (enable if-eval))))
+                    (if-eval (cadddr n) a)))))
 
 (defthmd if-eval-if-shape-true-branch
   (implies (and (if-exprp n)
@@ -320,11 +278,7 @@
                 (not (cddddr n))
                 (if-eval (cadr n) a))
            (equal (if-eval n a)
-                  (if-eval (caddr n) a)))
-  :hints (("Goal"
-           :use ((:instance if-eval-if-shape
-                            (n n)
-                            (a a))))))
+                  (if-eval (caddr n) a))))
 
 (defthmd if-eval-if-shape-false-branch
   (implies (and (if-exprp n)
@@ -337,11 +291,7 @@
                 (not (cddddr n))
                 (not (if-eval (cadr n) a)))
            (equal (if-eval n a)
-                  (if-eval (cadddr n) a)))
-  :hints (("Goal"
-           :use ((:instance if-eval-if-shape
-                            (n n)
-                            (a a))))))
+                  (if-eval (cadddr n) a))))
 
 (defthmd if-eval-if-shape-lookup-var-true
   (implies (and (if-exprp n)
@@ -355,10 +305,7 @@
                 (varp (cadr n))
                 (lookup-var (cadr n) a))
            (equal (if-eval n a)
-                  (if-eval (caddr n) a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-true-branch
-                              if-eval-var-is-lookup-var))))
+                  (if-eval (caddr n) a))))
 
 (defthmd if-eval-if-shape-lookup-var-false
   (implies (and (if-exprp n)
@@ -372,10 +319,7 @@
                 (varp (cadr n))
                 (not (lookup-var (cadr n) a)))
            (equal (if-eval n a)
-                  (if-eval (cadddr n) a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-false-branch
-                              if-eval-var-is-lookup-var))))
+                  (if-eval (cadddr n) a))))
 
 ;; if validp says the normalized if-expr is true under req,
 ;; then adding extensions to it does not change its truth
@@ -384,18 +328,7 @@
                 (if-assignp req)
                 (if-assignp a)
                 (validp n req))
-           (if-eval n (extend-assign req a)))
-  :hints (("Goal"
-           :in-theory (enable validp if-eval assignedp lookup-atom extend-assign
-                              if-eval-acons-true-when-lookup
-                              if-eval-acons-false-when-lookup
-                              if-eval-cons-cons-true-when-lookup
-                              if-eval-cons-list-false-when-lookup
-                              if-eval-if-shape-true-branch
-                              if-eval-if-shape-false-branch)
-           :do-not '(generalize eliminate-destructors fertilize)
-           :do-not-induct t
-           :induct (validp n req))))
+           (if-eval n (extend-assign req a))))
 
 (in-theory (disable validp-sound-on-extend-assign))
 
@@ -425,11 +358,7 @@
                 (if-assignp a)
                 (check-validp e))
            (if-eval (if-flat e) a))
-  :hints (("Goal"
-           :in-theory (enable check-validp)
-           :use ((:instance validp-nil-sound
-                            (n (if-flat e))
-                            (a a))))))
+)
 
 (in-theory (disable check-validp-is-sound-flat))
 
@@ -490,18 +419,14 @@
                 (if-assignp a)
                 (not (equal x y)))
            (equal (lookup-var x (acons y v a))
-                  (lookup-var x a)))
-  :hints (("Goal"
-           :in-theory (enable lookup-var))))
+                  (lookup-var x a))))
 
 (defthm lookup-var-acons-same
   (implies (and (varp x)
                 (booleanp v)
                 (if-assignp a))
            (equal (lookup-var x (acons x v a))
-                  v))
-  :hints (("Goal"
-           :in-theory (enable lookup-var))))
+                  v)))
 
 ;; counterexample-assign respects existing assignment in req.
 (defthm lookup-atom-counterexample-assign-when-assigned
@@ -510,12 +435,7 @@
                 (if-assignp req)
                 (assignedp x req))
            (equal (lookup-atom x (counterexample-assign n req))
-                  (lookup-atom x req)))
-  :hints (("Goal"
-           :in-theory (enable counterexample-assign assignedp lookup-atom)
-           :do-not '(generalize eliminate-destructors fertilize)
-           :do-not-induct t
-           :induct (counterexample-assign n req))))
+                  (lookup-atom x req))))
 
 (defthm lookup-var-counterexample-assign-when-assigned
   (implies (and (varp x)
@@ -523,85 +443,47 @@
                 (if-assignp req)
                 (consp (assoc-equal x req)))
            (equal (lookup-var x (counterexample-assign n req))
-                  (lookup-var x req)))
-  :hints (("Goal"
-           :in-theory (enable assignedp lookup-atom)
-           :use ((:instance lookup-atom-counterexample-assign-when-assigned
-                            (x x)
-                            (n n)
-                            (req req))))))
+                  (lookup-var x req))))
 
 (defthm lookup-var-counterexample-assign-when-acons-true
   (implies (and (varp x)
                 (norm-if-exprp n)
                 (if-assignp req))
-           (lookup-var x (counterexample-assign n (acons x t req))))
-  :hints (("Goal"
-           :in-theory (enable assoc-equal)
-           :use ((:instance lookup-var-counterexample-assign-when-assigned
-                            (x x)
-                            (n n)
-                            (req (acons x t req)))))))
+           (lookup-var x (counterexample-assign n (acons x t req)))))
 
 (defthm lookup-var-counterexample-assign-when-acons-false
   (implies (and (varp x)
                 (norm-if-exprp n)
                 (if-assignp req))
-           (not (lookup-var x (counterexample-assign n (acons x nil req)))))
-  :hints (("Goal"
-           :in-theory (enable assoc-equal)
-           :use ((:instance lookup-var-counterexample-assign-when-assigned
-                            (x x)
-                            (n n)
-                            (req (acons x nil req)))))))
+           (not (lookup-var x (counterexample-assign n (acons x nil req))))))
 
 (defthm lookup-var-counterexample-assign-when-cons-true
   (implies (and (varp x)
                 (norm-if-exprp n)
                 (if-assignp req))
-           (lookup-var x (counterexample-assign n (cons (cons x t) req))))
-  :hints (("Goal"
-           :in-theory (enable acons)
-           :use ((:instance lookup-var-counterexample-assign-when-acons-true
-                            (x x)
-                            (n n)
-                            (req req))))))
+           (lookup-var x (counterexample-assign n (cons (cons x t) req)))))
 
 (defthm lookup-var-counterexample-assign-when-cons-false
   (implies (and (varp x)
                 (norm-if-exprp n)
                 (if-assignp req))
-           (not (lookup-var x (counterexample-assign n (cons (cons x nil) req)))))
-  :hints (("Goal"
-           :in-theory (enable acons)
-           :use ((:instance lookup-var-counterexample-assign-when-acons-false
-                            (x x)
-                            (n n)
-                            (req req))))))
+           (not (lookup-var x (counterexample-assign n (cons (cons x nil) req))))))
 
 (defthm if-assignp-singleton-var-bool
   (implies (and (varp x)
                 (booleanp v))
-           (if-assignp (list (cons x v))))
-  :hints (("Goal"
-           :in-theory (enable if-assignp))))
+           (if-assignp (list (cons x v)))))
 
 (defthm if-assignp-cons-var-bool
   (implies (and (varp x)
                 (booleanp v)
                 (if-assignp a))
-           (if-assignp (cons (cons x v) a)))
-  :hints (("Goal"
-           :in-theory (enable if-assignp))))
+           (if-assignp (cons (cons x v) a))))
 
 (defthm if-assignp-counterexample-assign
   (implies (and (norm-if-exprp n)
                 (if-assignp req))
-           (if-assignp (counterexample-assign n req)))
-  :hints (("Goal"
-           :use ((:instance counterexample-assign-contract
-                            (n n)
-                            (req req))))))
+           (if-assignp (counterexample-assign n req))))
 
 (defthmd if-eval-if-shape-bool-true
   (implies (and (if-exprp n)
@@ -615,9 +497,7 @@
                 (booleanp (cadr n))
                 (cadr n))
            (equal (if-eval n a)
-                  (if-eval (caddr n) a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval lookup-atom))))
+                  (if-eval (caddr n) a))))
 
 (defthmd if-eval-if-shape-bool-false
   (implies (and (if-exprp n)
@@ -631,9 +511,7 @@
                 (booleanp (cadr n))
                 (not (cadr n)))
            (equal (if-eval n a)
-                  (if-eval (cadddr n) a)))
-  :hints (("Goal"
-           :in-theory (enable if-eval lookup-atom))))
+                  (if-eval (cadddr n) a))))
 
 (defthmd if-eval-if-shape-counterexample-then-branch
   (implies (and (norm-if-exprp n)
@@ -650,16 +528,7 @@
                                                   (list (cons (cadr n) t))))
                   (if-eval (caddr n)
                            (counterexample-assign (caddr n)
-                                                  (list (cons (cadr n) t))))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-true)
-           :use ((:instance if-assignp-singleton-var-bool
-                            (x (cadr n))
-                            (v t))
-                 (:instance lookup-var-counterexample-assign-when-cons-true
-                            (x (cadr n))
-                            (n (caddr n))
-                            (req nil))))))
+                                                  (list (cons (cadr n) t)))))))
 
 (defthmd if-eval-if-shape-counterexample-else-branch
   (implies (and (norm-if-exprp n)
@@ -676,16 +545,7 @@
                                                   (list (cons (cadr n) nil))))
                   (if-eval (cadddr n)
                            (counterexample-assign (cadddr n)
-                                                  (list (cons (cadr n) nil))))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-false)
-           :use ((:instance if-assignp-singleton-var-bool
-                            (x (cadr n))
-                            (v nil))
-                 (:instance lookup-var-counterexample-assign-when-cons-false
-                            (x (cadr n))
-                            (n (cadddr n))
-                            (req nil))))))
+                                                  (list (cons (cadr n) nil)))))))
 
 (defthmd if-eval-if-shape-counterexample-then-branch-cons
   (implies (and (norm-if-exprp n)
@@ -703,17 +563,7 @@
                                                   (cons (cons (cadr n) t) req)))
                   (if-eval (caddr n)
                            (counterexample-assign (caddr n)
-                                                  (cons (cons (cadr n) t) req)))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-true)
-           :use ((:instance if-assignp-cons-var-bool
-                            (x (cadr n))
-                            (v t)
-                            (a req))
-                 (:instance lookup-var-counterexample-assign-when-cons-true
-                            (x (cadr n))
-                            (n (caddr n))
-                            (req req))))))
+                                                  (cons (cons (cadr n) t) req))))))
 
 (defthmd if-eval-if-shape-counterexample-else-branch-cons
   (implies (and (norm-if-exprp n)
@@ -731,17 +581,7 @@
                                                   (cons (cons (cadr n) nil) req)))
                   (if-eval (cadddr n)
                            (counterexample-assign (cadddr n)
-                                                  (cons (cons (cadr n) nil) req)))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-false)
-           :use ((:instance if-assignp-cons-var-bool
-                            (x (cadr n))
-                            (v nil)
-                            (a req))
-                 (:instance lookup-var-counterexample-assign-when-cons-false
-                            (x (cadr n))
-                            (n (cadddr n))
-                            (req req))))))
+                                                  (cons (cons (cadr n) nil) req))))))
 
 (defthmd if-eval-if-shape-counterexample-assigned-true
   (implies (and (norm-if-exprp n)
@@ -759,16 +599,7 @@
            (equal (if-eval n
                            (counterexample-assign (caddr n) req))
                   (if-eval (caddr n)
-                           (counterexample-assign (caddr n) req))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-true)
-           :use ((:instance if-assignp-counterexample-assign
-                            (n (caddr n))
-                            (req req))
-                 (:instance lookup-var-counterexample-assign-when-assigned
-                            (x (cadr n))
-                            (n (caddr n))
-                            (req req))))))
+                           (counterexample-assign (caddr n) req)))))
 
 (defthmd if-eval-if-shape-counterexample-assigned-false
   (implies (and (norm-if-exprp n)
@@ -786,16 +617,7 @@
            (equal (if-eval n
                            (counterexample-assign (cadddr n) req))
                   (if-eval (cadddr n)
-                           (counterexample-assign (cadddr n) req))))
-  :hints (("Goal"
-           :in-theory (enable if-eval-if-shape-lookup-var-false)
-           :use ((:instance if-assignp-counterexample-assign
-                            (n (cadddr n))
-                            (req req))
-                 (:instance lookup-var-counterexample-assign-when-assigned
-                            (x (cadr n))
-                            (n (cadddr n))
-                            (req req))))))
+                           (counterexample-assign (cadddr n) req)))))
 
 ;; we find an assignment that falsifies the evaluation given that n is not
 ;; valid with req
@@ -805,28 +627,7 @@
   (implies (and (norm-if-exprp n)
                 (if-assignp req)
                 (not (validp n req)))
-           (not (if-eval n (counterexample-assign n req))))
-  :hints (("Goal"
-           :in-theory (enable counterexample-assign validp if-eval assignedp lookup-atom
-                              if-eval-if-shape-lookup-var-true
-                              if-eval-if-shape-lookup-var-false
-                              lookup-var-counterexample-assign-when-assigned
-                              lookup-var-counterexample-assign-when-acons-true
-                              lookup-var-counterexample-assign-when-acons-false
-                              lookup-var-counterexample-assign-when-cons-true
-                              lookup-var-counterexample-assign-when-cons-false
-                              if-eval-if-shape-counterexample-then-branch
-                              if-eval-if-shape-counterexample-else-branch
-                              if-eval-if-shape-counterexample-then-branch-cons
-                              if-eval-if-shape-counterexample-else-branch-cons
-                              if-eval-if-shape-counterexample-assigned-true
-                              if-eval-if-shape-counterexample-assigned-false
-                              if-assignp-counterexample-assign
-                              if-eval-if-shape-bool-true
-                              if-eval-if-shape-bool-false)
-           :do-not '(generalize eliminate-destructors fertilize)
-           :do-not-induct t
-           :induct (counterexample-assign n req))))
+           (not (if-eval n (counterexample-assign n req)))))
 
 (in-theory (disable counterexample-assign-falsifies-validp))
 

@@ -52,20 +52,11 @@ B4 -> B1 y became nil
 |#
 
 ; Q1a. We are using the definition on page 125
-#|
-(definec m-bad-app (x y :tl) :nat
-  (+ (len x) (len y)))
-|#
-;; we need to ask acl2 to use our measure function
-#|
-(definec m-bad-app (x y :tl acc :all) :nat
-  (match (list x y)
-      ((nil nil) 0)
-      ((& nil) (+ 1 (len x))) ; ('(0))
-      ((nil &) (len y)) 
-      (& (+ 2 (len acc) (len x))))) ;('(1)) biggest
-|#
 
+
+;; basically give the most complex action the heaviest weight
+;; second one is just transformation so just pass on y's len is good 
+;; ultimate goal is that number will go down eventually
 (definec m-bad-app (x y acc :tl) :lex 
 	 (declare (ignorable acc))
 	 (match (list x y)
@@ -76,6 +67,9 @@ B4 -> B1 y became nil
 
 
 ; in case 2, swap happens
+; in the third case, it will swap and turn into case 2.
+; to be decreasing, case 3 must be bigger, and it is '(1)
+; case 2 is smaller as it gives length of y. therefore correct
 (property case1-terminate (x acc :tl)
   :hyps (and (consp x))
   :body (l< (m-bad-app nil x acc)

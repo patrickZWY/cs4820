@@ -524,6 +524,8 @@
     (_ `(not ,x))))
 
 ;; basic unit of CNF
+;; (OR ...)
+;; &rest binds however many input args into a list
 (defun tseitin-clause (&rest lits)
   (cons 'or lits))
 
@@ -571,7 +573,7 @@
   (list (tseitin-clause (tseitin-neg p) (tseitin-neg x))
         (tseitin-clause x p)))
 
-;; when subformula is and clause
+;; when subformula is (And ...)
 ;; <- direction negate the lits
 ;; -> direction negate the p, distribute to each of lit
 (defun tseitin-and-clauses (p lits)
@@ -608,7 +610,6 @@
     (_
      (error "Unsupported stored Tseitin definition: ~a" fm))))
 
-;; return
 ;; rep : a list of representatives for the arguments
 ;; defs : definitions table for cached results
 ;; n : counter
@@ -690,24 +691,37 @@
              ((&values top defs _) (tseitin-main sk nil 0)))
         (tseitin-conj (tseitin-defs->clauses (reverse defs)) top)))))
 
+;; get the lits out of (Or ...)
 (defun clause-lits (f)
     (match f
         ((list* 'or lits) lits)
         (_ (list f))))
 
+;; get the clauses out of cnfs
 (defun cnf-clauses (f)
     (match f
         ((list* 'and clauses) clauses)
          (_ (list f))))
 
+;; get all the literals out of cnfs
 (defun all-lits (f)
     (reduce #'append
         (mapcar #'clause-lits (cnf-clauses f))
             :initial-value nil))
 
+;; singleton clause 
 (defun unit-clause-p (c)
   (equal (len (clause-lits c)) 1))
 
+;; find singleton clause in cnfs
+;; if none, return f
+;; otherwise create a negation of that unit
+;; gather a list of clauses where positive unit is not present
+;; refine previous list by removing literals that have negative unit in it
+;; return simplified form of result
+;; if there are singleton literals in cnfs, then clauses with positive unit are satisfied
+;; and can be taken out, clauses with negative units can take the units out because they
+;; are false and do not contribute to the truth of the disjunctive clause
 (defun one-literal-rule (f)
   (let* ((clauses (cnf-clauses f))
          (unit (car (remove-if-not #'unit-clause-p clauses))))
@@ -726,17 +740,24 @@
         (zero-one-arity 'and c1)))))
 
 
+;; find all unique literals in f
+;; if its negation shows up in all unique lits
+;; remove it and return the first one left
+;; remained ones should all occur as positive across all clauses
 (defun pure-literal (f)
     (let ((lits (remove-dups (all-lits f))))
         (car (remove-if #'(lambda (x)
                                 (in (tseitin-neg x) lits))
                                 lits))))
 
+;; drop a specific literal from all clauses
 (defun remove-clauses-with-lit (lit clauses)
     (remove-if #'(lambda (c)
                     (in lit (clause-lits c)))
                 clauses))
 
+;; if no pure literal, done
+;; otherwisee remove this lit
 (defun pure-literal-rule (f)
   (let* ((clauses (cnf-clauses f))
          (lit (pure-literal f)))
@@ -746,6 +767,13 @@
         (zero-one-arity 'and new-clauses)))))
 
 
+;; if var appears in all literals in clause c1 and
+;; its negation appears in all literals in clause c2
+;; remove this var in c1 and remove its negation in c2
+;; combine both into one Or clause without duplicates
+;; otherwise if negation of var is in c1 and positive in c2,
+;; vice versa
+;; otherwise, return nil
 (defun resolve-rule (var c1 c2)
   (cond
     ((and (in var (clause-lits c1))
@@ -762,16 +790,20 @@
        (zero-one-arity 'or res)))
     (t nil)))
 
-
+;; check if a literal appears in a clause 
 (defun clause-has-lit-p (lit c)
   (in lit (clause-lits c)))
 
+;; check check if a var and its negation appear within one clause
+;; which is a tautology
 (defun tautologyp (c)
   (let ((lits (clause-lits c)))
     (some #'(lambda (x)
               (in (tseitin-neg x) lits))
           lits)))
 
+;; try each one from the cartesian product of pos and neg sets
+;; eliminate tautology if there is one
 (defun resolve-all-pairs (var pos neg)
   (remove-dups
    (remove nil
@@ -784,12 +816,18 @@
                                neg))
                    pos))))
 
+;; remove a var either in pos or neg form from clauses
 (defun remove-var-clauses (var clauses)
   (remove-if #'(lambda (c)
                  (or (clause-has-lit-p var c)
                      (clause-has-lit-p (tseitin-neg var) c)))
              clauses))
 
+;; gather all clauses from cnfs
+;; find all clauses where var appears positively
+;; similarly for negative
+;; find all clauses where it does not appear
+;; resolve pos against neg, append result to irrelevant ones
 (defun dp-step (var f)
   (let* ((clauses (cnf-clauses f))
          (pos (remove-if-not #'(lambda (c)
@@ -834,6 +872,7 @@
  (dp-step 'p '(and (or p q) (or (not p) (not q))))
  t)
 
+
 (defun atom-formulas- (f)
   (match f
     ((type boolean) nil)
@@ -850,17 +889,21 @@
 (defun empty-clause-p (c)
   (equal c nil))
 
+;; if there is a nil in cnf then it's unsat
 (defun unsat-cnf-p (f)
   (some #'empty-clause-p (cnf-clauses f)))
 
+;; cnf reduced to only t or empty is sat 
 (defun sat-cnf-p (f)
   (equal (zero-one-arity 'and (cnf-clauses f)) t))
 
+;; get the lit itself without considering negative or positive 
 (defun literal-var (lit)
   (match lit
     ((list 'not x) x)
     (_ lit)))
 
+;; choose a literal (don't care negation of it) in all literals
 (defun choose-var (f)
   (car (remove-dups (mapcar #'literal-var (all-lits f)))))
 
@@ -897,6 +940,10 @@
 (defun add-unit-clause (lit f)
   (zero-one-arity 'and (cons lit (cnf-clauses f))))
 
+;; given a formula and optional assignment
+;; if unsat or sat done, give result
+;; otherwise start unit propogation first
+;; then do pure literal elimination
 (defun dp-cnf (f &optional (asg nil))
   (cond
     ((unsat-cnf-p f) 'unsat)
@@ -948,6 +995,7 @@
                 (or (not p) (not q)))))
 (time (DP '(and (or (foo x) q) (or (not (foo x)) r) (or p s) (or (not s) t))))
 
+;; did not use resolution, use casesplit instead
 
 ;;; ============================================================
 ;;; Q4 — DPLL (iterative with backjumping)
