@@ -404,6 +404,17 @@
     _ 2 _ _  _ _ 2 _
   ))
 
+(defconstant *unruly-example-board-2*
+  '(_ _ _ _  _ _ _ 1
+    1 1 1 2  _ 2 _ 1
+    _ _ _ 2  _ 2 _ _ 
+    _ _ _ _  _ _ _ 2
+    1 1 _ _  _ _ _ _ 
+    1 _ 2 _  _ 1 _ _
+    _ _ _ _  _ _ 1 _ 
+    _ 2 _ _  _ _ 2 _
+  ))
+
 (defun unruly-exactly-one (vars)
   `(and ((_ at-least 1) ,@vars)
         ((_ at-most 1) ,@vars)))
@@ -503,4 +514,4 @@
                   (solver-pop)))))
 
 
-(pretty-print-unruly (time (solve-unruly *unruly-example-board*)))
+(pretty-print-unruly (time (solve-unruly *unruly-example-board-2*)))
