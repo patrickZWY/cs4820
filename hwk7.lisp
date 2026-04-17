@@ -1,5 +1,10 @@
 #|
 
+run this:
+(load this file)
+(in-package :tp)
+(import 'acl2s-interface-extras::(acl2s-arity))
+
  Copyright © 2026 by Pete Manolios 
  CS 4820 Fall 2026
 
@@ -1172,6 +1177,14 @@ Examples
  Test your functions using at least 10 interesting formulas. 
  
 |#
+
+(defun skolem (fm uvars fns)
+  (match fm
+    ((list* op args)
+      (match fm
+        ((list 'exists vars body)
+          (
+          ))))))
 
 ;;(defun simp-skolem-pnf-cnf (f) ...)
 
