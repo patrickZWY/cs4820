@@ -1178,13 +1178,102 @@ Examples
  
 |#
 
-(defun skolem (fm uvars fns)
-  (match fm
+(defun subst-term (sigma tm)
+  (match tm
+    ((type symbol)
+      (let ((hit (assoc tm sigma :test #'equal)))
+        (if hit (cdr hit) tm)))
+    ((satisfies quotep) tm)
+    ((satisfies constant-objectp) tm)
+    ((list* f args)
+      (cons f (mapcar (lambda (a) (subst-term sigma a)) args)))
+    (_ tm)
+    ))
+
+(defun subst-formula (sigma f)
+  (match f
+    ((type boolean) f)
+    ((type symbol)
+      (let ((hit (assoc f sigma :test #'equal)))
+        (if hit (cdr hit) f)))
+        
+    ((satisfies quotep) f)
+    ((satisfies constant-objectp) f)
+    ((list q vars body)
+      (if (member q *fo-quantifiers* :test #'equal)
+          (let* ((vs (if (listp vars) vars (list vars)))
+                 (sigma1 (remove-if (lambda (pr)
+                                      (member (car pr) vs :test #'equal))
+                                sigma)))
+            `(,q ,vars ,(subst-formula sigma1 body)))
+          (list q
+                (subst-formula sigma vars)
+                (subst-formula sigma body))))
     ((list* op args)
-      (match fm
-        ((list 'exists vars body)
-          (
-          ))))))
+      (cons op (mapcar (lambda (a) (subst-formula sigma a)) args)))
+    (_ f)
+    ))
+
+(defun variant (base used)
+  (let ((sym (intern (string-upcase base))))
+    (if (member sym used :test #'equal)
+      (variant (concatenate 'string base "0") used)
+      sym)))
+
+;; if no universals before, generate constant
+;; if universals before, generate functions
+(defun mk-skolem-term (y uvars fns)
+  (let* ((base (if (endp uvars)
+                (format nil "c_~a" y)
+              (format nil "f_~a" y)))
+            (name (variant base fns)))
+          (values
+            (if (endp uvars)
+                name
+              (cons name uvars))
+            name)))
+
+(defun skolem-exists-vars (vars body uvars fns)
+  (if (endp vars)
+      (skolem body uvars fns)
+      (multiple-value-bind (term fname)
+        (mk-skolem-term (car vars) uvars fns)
+      (let* ((body1 (subst-formula (list (cons (car vars) term)) body)))
+      (skolem-exists-vars (cdr vars) body1 uvars (cons fname fns))))))
+
+(defun skolem-list (args uvars fns)
+  (if (endp args)
+      (values nil fns)
+    (multiple-value-bind (a1 fns1)
+        (skolem (car args) uvars fns)
+      (multiple-value-bind (rest1 fns2)
+          (skolem-list (cdr args) uvars fns1)
+            (values (cons a1 rest1) fns2)))))
+
+;; at this point, we have done simplification so
+;; all existential quantifiers are used in body
+;; and no empty quantifier existentials
+;; similarly for universal quantifiers
+(defun skolem (fm &optional (uvars nil) (fns nil))
+  (match fm
+    ((list 'forall vars body)
+        (let ((vs (if (listp vars) vars (list vars))))
+          (multiple-value-bind (body1 fns1)
+            (skolem body (append uvars vs) fns)
+          (values `(forall ,vars ,body1) fns1))))
+
+    ((list 'exists vars body)
+        (skolem-exists-vars (if (listp vars) vars (list vars))
+                            body
+                            uvars
+                            fns))
+
+    ((list* op args)
+          (multiple-value-bind (args1 fns1)
+            (skolem-list args uvars fns)
+          (values (cons op args1) fns1)))
+
+        (_ (values fm fns))))
 
 ;;(defun simp-skolem-pnf-cnf (f) ...)
 
