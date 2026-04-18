@@ -1275,7 +1275,105 @@ Examples
 
         (_ (values fm fns))))
 
-;;(defun simp-skolem-pnf-cnf (f) ...)
+(defun conjunction-p (f)
+  (and (consp f) (eq (car f) 'and)))
+
+(defun disjunction-p (f)
+  (and (consp f) (eq (car f) 'or)))
+
+(defun make-and (args)
+  (let ((xs (flatten-and args)))
+    (cond
+      ((endp xs) t)
+      ((endp (cdr xs)) (car xs))
+      (t (cons 'and xs)))))
+
+(defun make-or (args)
+  (let ((xs (flatten-or args)))
+    (cond
+      ((endp xs) nil)
+      ((endp (cdr xs)) (car xs))
+      (t (cons 'or xs)))))
+
+(defun flatten-and (args)
+  (apply #'append
+    (mapcar (lambda (a)
+      (if (conjunction-p a)
+          (cdr a)
+          (list a)))
+        args)))
+
+(defun flatten-or (args)
+  (apply #'append
+    (mapcar (lambda (a)
+              (if (disjunction-p a)
+                  (cdr a)
+                  (list a)))
+                args)))
+
+(defun drop-foralls (fm)
+  (match fm 
+    ((list 'forall vars body)
+      (declare (ignore vars))
+      (drop-foralls body))
+    ((list 'not a)
+        `(not ,(drop-foralls a)))
+    ((list* 'and args)
+      (make-and (mapcar #'drop-foralls args)))
+
+    ((list* 'or args)
+      (make-or (mapcar #'drop-foralls args)))
+
+    (_ fm)))
+
+(defun distribute-or-2 (a b)
+  (cond
+    ((conjunction-p a)
+      (make-and 
+        (mapcar (lambda (x)
+                (distribute-or-2 x b))
+                (cdr a))))
+
+    ((conjunction-p b)
+      (make-and
+        (mapcar (lambda (y)
+                (distribute-or-2 a y))
+                (cdr b))))
+    (t
+      (make-or (flatten-or (list a b))))))
+
+(defun distribute-or-list (args)
+  (cond
+    ((endp args) nil)
+    ((endp (cdr args)) (car args))
+    (t (distribute-or-2 (car args)
+                        (distribute-or-list (cdr args))))))
+
+(defun cnf (fm)
+  (let ((fm1 (drop-foralls fm)))
+    (cnf1 fm1)))
+
+(defun cnf1 (fm)
+  (match fm
+    ((list* 'and args)
+      (make-and
+        (flatten-and
+          (mapcar #'cnf1 args))))
+          
+    ((list* 'or args)
+      (distribute-or-list 
+        (mapcar #'cnf1 args)))
+        
+    ((list 'not a)
+      `(not ,a))
+      
+    (_ fm)))
+
+(defun simp-skolem-pnf-cnf (f)
+  (multiple-value-bind (sk fns)
+    (skolem (nnf (fo-simplify f)))
+  (declare (ignore fns))
+  (cnf sk)))
 
 
 #|
@@ -1292,9 +1390,73 @@ Examples
  Test your functions using at least 10 interesting inputs. 
  
 |#
+;; occurs check
+(defun defined (env x)
+  (not (null (assoc x env :test #'equal))))
 
-;;(defun unify (l) ...)
+(defun apply-subst (env tm)
+  (match tm
+    ((satisfies variable-symbolp)
+     (let ((hit (assoc tm env :test #'equal)))
+       (if hit
+           (apply-subst env (cdr hit))
+           tm)))
+    ((satisfies quotep) tm)
+    ((satisfies constant-objectp) tm)
+    ((list* f args)
+     (cons f (mapcar (lambda (a) (apply-subst env a)) args)))
+    (_ tm)))
 
+(defun istriv (env x tm)
+  (match tm
+    ((satisfies variable-symbolp)
+     (or (equal tm x)
+         (and (defined env tm)
+              (istriv env x (apply-subst env tm)))))
+    ((list* f args)
+     (declare (ignore f))
+     (if (some (lambda (a) (istriv env x a)) args)
+         (error "cyclic")
+         nil))
+    (_ nil)))
+
+(defun unify-helper (env eqs)
+  (match eqs
+    (nil env)
+    ((cons (list lhs rhs) oth)
+     (let ((lhs (apply-subst env lhs))
+           (rhs (apply-subst env rhs)))
+       (match (list lhs rhs)
+
+         ((list (list* f fargs) (list* g gargs))
+          (if (and (equal f g)
+                   (= (length fargs) (length gargs)))
+              (unify-helper env (append (mapcar #'list fargs gargs) oth))
+              (error "impossible unification")))
+
+         ((list (satisfies variable-symbolp) tm)
+          (let ((x lhs))
+            (istriv env x tm)
+            (unify-helper (acons x tm env) oth)))
+
+         ((list tm (satisfies variable-symbolp))
+          (let ((x rhs))
+            (istriv env x tm)
+            (unify-helper (acons x tm env) oth)))
+
+         (_
+          (if (equal lhs rhs)
+              (unify-helper env oth)
+              (error "impossible unification"))))))))
+
+(defun unify (l)
+  (handler-case
+      (let ((env (unify-helper nil l)))
+        (mapcar (lambda (pr)
+                  (cons (car pr)
+                        (apply-subst env (cdr pr))))
+                env))
+    (error () 'fail)))
 #|
 
  Question 5. (25 pts)
