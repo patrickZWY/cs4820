@@ -1426,28 +1426,31 @@ Examples
     ((cons (list lhs rhs) oth)
      (let ((lhs (apply-subst env lhs))
            (rhs (apply-subst env rhs)))
-       (match (list lhs rhs)
+       (cond
+         ((equal lhs rhs)
+          (unify-helper env oth))
 
-         ((list (list* f fargs) (list* g gargs))
-          (if (and (equal f g)
-                   (= (length fargs) (length gargs)))
-              (unify-helper env (append (mapcar #'list fargs gargs) oth))
-              (error "impossible unification")))
+         (t
+          (match (list lhs rhs)
 
-         ((list (satisfies variable-symbolp) tm)
-          (let ((x lhs))
-            (istriv env x tm)
-            (unify-helper (acons x tm env) oth)))
+            ((list (list* f fargs) (list* g gargs))
+             (if (and (equal f g)
+                      (= (length fargs) (length gargs)))
+                 (unify-helper env (append (mapcar #'list fargs gargs) oth))
+                 (error "impossible unification")))
 
-         ((list tm (satisfies variable-symbolp))
-          (let ((x rhs))
-            (istriv env x tm)
-            (unify-helper (acons x tm env) oth)))
+            ((list (satisfies variable-symbolp) tm)
+             (let ((x lhs))
+               (istriv env x tm)
+               (unify-helper (acons x tm env) oth)))
 
-         (_
-          (if (equal lhs rhs)
-              (unify-helper env oth)
-              (error "impossible unification"))))))))
+            ((list tm (satisfies variable-symbolp))
+             (let ((x rhs))
+               (istriv env x tm)
+               (unify-helper (acons x tm env) oth)))
+
+            (_
+             (error "impossible unification")))))))))
 
 (defun unify (l)
   (handler-case
@@ -1476,7 +1479,193 @@ Examples
 
 |#
 
-;;(defun fo-no=-val (f) ...)
+(defun literalp-fo (x)
+  (or (nth-value 0 (fo-atomic-formulap x))
+      (and (consp x)
+           (equal (car x) 'not)
+           (nth-value 0 (fo-atomic-formulap (cadr x))))))
+
+(defun clause-formula->list (f)
+  (match f
+    ((list* 'or lits) lits)
+    (_ (list f))))
+
+(defun cnf-formula->clauses (f)
+  (cond
+    ;; true = empty conjunction = no clauses
+    ((equal f t) nil)
+
+    ;; false = one empty clause
+    ((equal f nil) (list nil))
+
+    ((and (consp f) (equal (car f) 'and))
+     (mapcan (lambda (cl)
+               (cond
+                 ((equal cl t) nil)         ; drop trivially true conjunct
+                 ((equal cl nil) (list nil)) ; empty clause
+                 (t (list (clause-formula->list cl)))))
+             (cdr f)))
+
+    (t
+     (list (clause-formula->list f)))))
+
+(defun normalize-clause (c)
+  (remove-duplicates c :test #'equal))
+
+(defun normalize-clauses (cls)
+  (remove-duplicates 
+    (remove-if #'tautology-clause-p    ; add this
+               (mapcar #'normalize-clause cls))
+    :test #'equal))
+    
+(defun neg-lit-p (lit)
+  (and (consp lit) (equal (car lit) 'not)))
+
+(defun pos-lit-p (lit)
+  (not (neg-lit-p lit)))
+
+(defun lit-atom (lit)
+  (if (neg-lit-p lit) (cadr lit) lit))
+
+(defun complementary-lits-p (l1 l2)
+  (or (and (not (neg-lit-p l1)) (neg-lit-p l2))
+      (and (neg-lit-p l1) (not (neg-lit-p l2)))))
+
+(defun apply-subst-atom (env atm)
+  (match atm
+    ((list* p args)
+     (cons p (mapcar (lambda (a) (apply-subst env a)) args)))
+    (_ atm)))
+
+(defun apply-subst-lit (env lit)
+  (if (neg-lit-p lit)
+      `(not ,(apply-subst-atom env (cadr lit)))
+      (apply-subst-atom env lit)))
+
+(defun apply-subst-clause (env clause)
+  (mapcar (lambda (lit) (apply-subst-lit env lit)) clause))
+
+(defun unify-lits (l1 l2)
+  (let ((a1 (lit-atom l1))
+        (a2 (lit-atom l2)))
+    (if (complementary-lits-p l1 l2)
+        (unify (list (list a1 a2)))
+        'fail)))
+
+(defun remove-one (x l)
+  (cond ((endp l) nil)
+        ((equal x (car l)) (cdr l))
+        (t (cons (car l) (remove-one x (cdr l))))))
+
+(defun tautology-clause-p (c)
+  (some (lambda (lit)
+          (member (negate-lit lit) c :test #'equal))
+        c))
+
+(defun resolve-once (c1 c2)
+  (let ((res nil))
+    (dolist (l1 c1)
+      (dolist (l2 c2)
+        (when (complementary-lits-p l1 l2)
+          (let ((mgu (unify-lits l1 l2)))
+            (unless (equal mgu 'fail)
+              (let* ((r1 (remove-one l1 c1))
+                     (r2 (remove-one l2 c2))
+                     (new (append r1 r2))
+                     (new (apply-subst-clause mgu new))
+                     (new (normalize-clause new)))
+                (unless (tautology-clause-p new)
+                  (pushnew new res :test #'equal))))))))
+    res))
+
+(defun subset-equal (a b)
+  (every (lambda (x) (member x b :test #'equal)) a))
+
+(defun subsumesp-shallow (c1 c2)
+  (subset-equal c1 c2))
+
+(defun compose-subst (s1 s2)
+  (append
+   (mapcar (lambda (pr)
+             (cons (car pr) (apply-subst s1 (cdr pr))))
+           s2)
+   s1))
+
+(defun subsumesp-match (small big &optional (env nil))
+  (cond
+    ((endp small) t)
+    (t
+     (some (lambda (lit2)
+             (let ((mgu (unify (list (list (apply-subst-lit env (car small))
+                                           lit2)))))
+               (unless (equal mgu 'fail)
+                 (subsumesp-match (cdr small)
+                                  (remove-one lit2 big)
+                                  (compose-subst mgu env)))))
+           big))))
+
+(defun subsumesp (c1 c2)
+  (subset-equal c1 c2))
+
+(defun incorporate-clause (clause clauses)
+  (cond
+    ;; empty clause wins immediately
+    ((null clause)
+     (list nil))
+
+    ;; clause already redundant
+    ((some (lambda (c) (subsumesp c clause)) clauses)
+     clauses)
+
+    ;; otherwise keep it, and remove clauses it subsumes
+    (t
+     (cons clause
+           (remove-if (lambda (c) (subsumesp clause c))
+                      clauses)))))
+
+(defun incorporate-clauses (new clauses)
+  (reduce #'incorporate-clause new :initial-value clauses))
+
+(defun empty-clause-p (c)
+  (endp c))
+
+(defun all-pairs (clauses)
+  (let ((res nil))
+    (loop for xs on clauses do
+      (loop for ys on (cdr xs) do
+        (push (list (car xs) (car ys)) res)))
+    res))
+
+(defun saturate-resolution (clauses)
+  (labels ((sat-step (known)
+             ;; already have contradiction
+             (when (some #'empty-clause-p known)
+               (return-from saturate-resolution 'valid))
+
+             (let* ((pairs (all-pairs known))
+                    (new
+                     (remove-duplicates
+                      (mapcan (lambda (pr)
+                                (resolve-once (first pr) (second pr)))
+                              pairs)
+                      :test #'equal)))
+
+               ;; derived contradiction this round
+               (when (some #'empty-clause-p new)
+                 (return-from saturate-resolution 'valid))
+
+               (let ((known2 (incorporate-clauses new known)))
+                 (if (equal known2 known)
+                     'fail
+                     (sat-step known2))))))
+    (sat-step (normalize-clauses clauses))))
+
+(defun fo-no=-val (f)
+  (let* ((negf `(not ,f))
+         (cnf-form (simp-skolem-pnf-cnf negf))
+         (clauses (normalize-clauses (cnf-formula->clauses cnf-form))))
+    (saturate-resolution clauses)))
+
 
 #|
 
@@ -1496,3 +1685,20 @@ Examples
 
 ;;(defun fo-val (f) ...)
 
+(defun show-pipeline (f)
+  (let* ((s  (fo-simplify f))
+         (n  (nnf s))
+         (sk (multiple-value-bind (g fns) (skolem n)
+               (declare (ignore fns))
+               g))
+         (c  (cnf sk))
+         (v  (fo-no=-val f)))
+    (format t "~%========================================~%")
+    (format t "Input:      ~s~%" f)
+    (format t "Simplify:   ~s~%" s)
+    (format t "NNF:        ~s~%" n)
+    (format t "Skolem:     ~s~%" sk)
+    (format t "CNF:        ~s~%" c)
+    (format t "Validity:   ~s~%" v)
+    (format t "========================================~%")
+    v))
