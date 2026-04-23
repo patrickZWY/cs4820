@@ -407,7 +407,7 @@
 (infer-top '(Lam f (Lam x (App (Var f) (Var x)))))
 
 ;; x is α, g is β, f is γ
-;; (App (Var g) (Var x)) gives β = α -> δ
+;; (App (Var g) (Var x)) gives β = α -> δ, β has to be in this form otherwise this fails
 ;; (App (Var f (App (Var g) (Var x)))) gives γ = δ -> σ
 ;; (Lam x (App (Var f (App (Var g) (Var x))))) gives α -> σ
 ;; (Lam g (Lam x (App (Var f (App (Var g) (Var x)))))) gives β -> (α -> σ)
@@ -446,6 +446,35 @@
 ;; (α -> α -> β) -> α -> β
 ;; W Combinator, duplication
 (infer-top '(Lam f (Lam x (App (App (Var f) (Var x)) (Var x)))))
+
+;; S Combinator, distribution
+;; assign x to α, g to β, f to γ
+;; (App (Var f) (Var x)) gives γ = α -> δ
+;; (App (Var g) (Var x)) gives β = α -> ε
+;; (App (App (Var f) (Var x)) (App (Var g) (Var x))) gives δ = ε -> κ
+;; (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x)))) gives α -> κ
+;; (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x))))) gives (α -> ε) -> (α -> κ)
+;; (Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x)))))) gives (α -> δ) -> (α -> ε) -> (α -> κ)
+;; which is rewritten as (α -> (ε -> κ)) -> (α -> ε) -> (α -> κ)
+
+(infer-top '(Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x)))))))
+
+;; Combinator Relations
+
+;; B = S (K S) K
+
+(infer-top '(App
+  (App
+    (Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x))))))
+    (App
+      (Lam x (Lam y (Var x)))
+      (Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x))))))))
+  (Lam x (Lam y (Var x)))))
+
+
+
+
+
 
 ;; unbound variable
 (infer-top '(Var x))
