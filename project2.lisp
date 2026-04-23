@@ -358,8 +358,112 @@
                   :verify-guards nil))
   (infer nil e 0))
 
+;; Identity, constant, basic lambdas
+;; α  -> α
 (infer-top '(Lam x (Var x)))
+
+;; α -> Bool 
 (infer-top '(Lam x True))
+(infer-top '(Lam x False))
+
+;; assign x to α, y to β
+;; inside-out
+;; (Lam y (Var x)) gives us β -> α
+;; (Lam x (Lam y (Var x))) gives us α -> β -> α 
+;; α -> β -> α
+;; K Combinator, constant function
+(infer-top '(Lam x (Lam y (Var x))))
+
+;; assign x to α, y to β
+;; (Lam y (Var y)) gives β -> β
+;; (Lam x (Lam y (Var y))) gives α -> β -> β
+;; α -> β -> β
+(infer-top '(Lam x (Lam y (Var y))))
+
+;; Bool 
 (infer-top '(App (Lam x (Var x)) True))
+(infer-top '(App (App (Lam x (Lam y (Var x))) True) False))
+
+;; α -> α
+(infer-top '(App (Lam f (Lam x (App (Var f) (Var x))))
+                 (Lam z (Var z))))
+
+
+;; Bool
 (infer-top '(If True False True))
+(infer-top '(If False True False))
+
+;; Bool -> Bool
+(infer-top '(Lam x (If (Var x) True False)))
+(infer-top '(Lam x (If (Var x) (Var x) False)))
+
+;; Bool -> Bool -> Bool
+(infer-top '(Lam x (Lam y (If (Var x) (Var y) True))))
+
+;; α -> α
+(infer-top '(Lam f (Var f)))
+
+;; (α -> β) -> α -> β
+(infer-top '(Lam f (Lam x (App (Var f) (Var x)))))
+
+;; x is α, g is β, f is γ
+;; (App (Var g) (Var x)) gives β = α -> δ
+;; (App (Var f (App (Var g) (Var x)))) gives γ = δ -> σ
+;; (Lam x (App (Var f (App (Var g) (Var x))))) gives α -> σ
+;; (Lam g (Lam x (App (Var f (App (Var g) (Var x)))))) gives β -> (α -> σ)
+;; (Lam f (Lam g (Lam x (App (Var f) (App (Var g) (Var x)))))) gives γ -> β -> (α -> σ)
+;; which is (δ -> σ) -> (α -> δ) -> (α -> σ)
+
+#|
+(:ok ((1 fun (tvar 2) (tvar 3))     ;; replacing β by α -> σ
+      (0 fun (tvar 3) (tvar 4))     ;; replacing γ by δ -> σ
+      (0 fun (tvar 3) (tvar 4)))    ;; duplicate from compose-subst
+;; final result
+     (fun (fun (tvar 3) (tvar 4))   ;; (δ -> σ) -> (α -> σ) -> (α -> σ)
+          (fun (fun (tvar 2) (tvar 3))
+               (fun (tvar 2) (tvar 4))))
+     5)
+|#
+
+
+;; (β -> γ) -> (α -> β) -> α -> γ
+;; B Combinator, function composition
+(infer-top '(Lam f (Lam g (Lam x (App (Var f) (App (Var g) (Var x)))))))
+
+;; (Bool -> α) -> α
+(infer-top '(Lam f (App (Var f) True)))
+
+;; (Bool -> α) -> β -> α
+(infer-top '(Lam f (Lam x (App (Var f) True))))
+
+;; (α -> β) -> α -> β
+(infer-top '(Lam f (Lam x (App (Var f) (Var x)))))
+
+;; (α -> β -> γ) -> β -> α -> γ
+;; C Combinator, flip
+(infer-top '(Lam f (Lam x (Lam y (App (App (Var f) (Var y)) (Var x))))))
+
+;; (α -> α -> β) -> α -> β
+;; W Combinator, duplication
+(infer-top '(Lam f (Lam x (App (App (Var f) (Var x)) (Var x)))))
+
+;; unbound variable
+(infer-top '(Var x))
+(infer-top '(Lam x (Var y)))
+
+;; applying non-function
+(infer-top '(App True False))
+(infer-top '(Lam x (App True (Var x))))
+
+;; Our type system cannot handle heterogenous if clause
+(infer-top '(If True False (Lam x True)))
+(infer-top '(If True (Lam x True) False))
+
+
+
+;; Bad If Condition
+(infer-top '(If (Lam x True) False True))
+
+;; Our type system cannot handle infinite (recursive) type 
 (infer-top '(Lam x (App (Var x) (Var x))))
+(infer-top '(Lam f (Lam x (App (Var f) (Var f)))))
