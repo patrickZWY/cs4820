@@ -1,5 +1,8 @@
 (in-package "ACL2S")
 
+(defmacro r ()
+  '(ld "project2.lisp"))
+
 ;; TYPES
 ;; A type is either a Boolean, an unknown type, or a Function
 (defdata ty
@@ -226,11 +229,12 @@
             (equal ty2 'Bool))
        (unify-ok nil))
 
-      ;; Check if variable has the same type
+      ;; If left side has unknown type variable
+      ;; bind left's id to right's type
       ((equal (ty-tag ty1) 'TVar)
        (bind-tvar (tvar-id ty1) ty2))
 
-      ;; Check if variable has the same type
+      ;; Vice versa for right side
       ((equal (ty-tag ty2) 'TVar)
        (bind-tvar (tvar-id ty2) ty1))
 
@@ -243,7 +247,8 @@
                               (fun-dom ty2))))
          (if (not (unify-okp r1))
              r1
-          ;; If domains ok, then unifying the co-domains of functions
+          ;; If domains ok, then first apply that substitution to b and d
+          ;; then unify the co-domains of functions
            (let* ((s1 (unify-subst r1))
                   (c1 (apply-subst-ty s1 (fun-cod ty1)))
                   (c2 (apply-subst-ty s1 (fun-cod ty2)))
@@ -323,33 +328,41 @@
   (if (zp fuel)
       (infer-fail (list :out-of-fuel e))
     (cond
+      ;; no substitutions needed for true and false
       ((equal (expr-tag e) 'True)
        (infer-true g e next))
 
       ((equal (expr-tag e) 'False)
        (infer-false g e next))
-
+      ;; just look up variable in environment
+      ;; if found good, else fails
       ((equal (expr-tag e) 'Var)
        (infer-var g e next))
 
       ((equal (expr-tag e) 'Lam)
        (let* ((x     (lam-var e))
               (body  (lam-body e))
+              ;; create a fresh type variable for binding argument
               (tmp   (fresh-tyvar next))
               (a     (car tmp))
               (next1 (cadr tmp))
+              ;; extend environment with binding argument and its new type
               (g1    (cons (cons x a) g))
+              ;; infer body
               (rb    (infer/fuel (- fuel 1) g1 body next1)))
          (if (not (infer-okp rb))
              rb
            (let* ((s1    (infer-subst rb))
                   (tb    (infer-type rb))
                   (next2 (infer-next rb))
+                  ;; apply body substitution to new type
                   (a1    (apply-subst-ty s1 a))
                   (tb1   (apply-subst-ty s1 tb)))
+             ;; return an arrow type : argument type -> 
              (infer-ok s1 (mk-fun a1 tb1) next2)))))
 
       ((equal (expr-tag e) 'App)
+       ;; infer function part of app first
        (let* ((f  (app-fun e))
               (a  (app-arg e))
               (rf (infer/fuel (- fuel 1) g f next)))
@@ -358,21 +371,27 @@
            (let* ((s1    (infer-subst rf))
                   (tf    (infer-type rf))
                   (next1 (infer-next rf))
+                  ;; apply f's substitution to the environment
                   (g1    (apply-subst-env s1 g))
+                  ;; infer argument part of app
                   (ra    (infer/fuel (- fuel 1) g1 a next1)))
              (if (not (infer-okp ra))
                  ra
                (let* ((s2    (infer-subst ra))
                       (ta    (infer-type ra))
                       (next2 (infer-next ra))
+                      ;; create fresh result type
                       (tmp   (fresh-tyvar next2))
                       (rty   (car tmp))
                       (next3 (cadr tmp))
                       (tf2   (apply-subst-ty s2 tf))
+                      ;; force function part of app's type to equal arg -> result
                       (want  (mk-fun ta rty))
+                      ;; unify
                       (ru    (unify tf2 want)))
                  (if (not (unify-okp ru))
                      ru
+                   ;; compose all substitutions
                    (let* ((s3   (unify-subst ru))
                           (s    (compose-subst s3 (compose-subst s2 s1)))
                           (tres (apply-subst-ty s rty)))
@@ -382,34 +401,42 @@
        (let* ((c   (if-cond e))
               (thn (if-then e))
               (els (if-else e))
+              ;; infer condition c
               (rc  (infer/fuel (- fuel 1) g c next)))
          (if (not (infer-okp rc))
              rc
            (let* ((s1    (infer-subst rc))
                   (tc    (infer-type rc))
                   (next1 (infer-next rc))
+                  ;; unify condition type with Bool
                   (ruc   (unify tc 'Bool)))
              (if (not (unify-okp ruc))
                  ruc
                (let* ((sc    (unify-subst ruc))
                       (s1c   (compose-subst sc s1))
+                      ;; apply substitution to environment
                       (g1    (apply-subst-env s1c g))
+                      ;; infer then branch
                       (rt    (infer/fuel (- fuel 1) g1 thn next1)))
                  (if (not (infer-okp rt))
                      rt
                    (let* ((s2    (infer-subst rt))
                           (tt    (infer-type rt))
                           (next2 (infer-next rt))
+                          ;; apply substitution to environment
                           (g2    (apply-subst-env s2 g1))
+                          ;; infer else branch
                           (re    (infer/fuel (- fuel 1) g2 els next2)))
                      (if (not (infer-okp re))
                          re
                        (let* ((s3    (infer-subst re))
                               (te    (infer-type re))
                               (next3 (infer-next re))
+                              ;; unify then type with else type
                               (ru    (unify (apply-subst-ty s3 tt) te)))
                          (if (not (unify-okp ru))
                              ru
+                           ;; compose substitutions
                            (let* ((s4   (unify-subst ru))
                                   (s    (compose-subst s4
                                                        (compose-subst s3
@@ -456,8 +483,21 @@
 ;; α -> β -> β
 (infer-top '(Lam x (Lam y (Var y))))
 
-;; Bool 
+;; assign x to α
+;; (Lam x (Var x)) gives α -> α
+;; (App (Lam x (Var x)) True) gives (α -> α) = Bool -> β
+;; α |-> Bool, β |-> Bool
+;; Bool
 (infer-top '(App (Lam x (Var x)) True))
+
+;; assign x to α, y to β
+;; (Lam y (Var x)) gives β -> α
+;; (Lam x (Lam y (Var x))) gives α -> (β -> α)
+;; (App (Lam x (Lam y (Var x))) True) gives α -> (β -> α) = Bool -> γ
+;; Result of unification: α = Bool, γ = β -> Bool
+;; (App (App (Lam x (Lam y (Var x))) True) False) gives β -> Bool = Bool -> δ
+;; Result of unification: β = Bool, Bool = δ
+;; which can be written as Bool
 (infer-top '(App (App (Lam x (Lam y (Var x))) True) False))
 
 ;; α -> α
@@ -474,6 +514,11 @@
 (infer-top '(Lam x (If (Var x) (Var x) False)))
 
 ;; Bool -> Bool -> Bool
+;; assigns x to α, y to β
+;; α must be Bool, y must be Bool
+;; (If (Var x) (Var y) True) gives Bool
+;; (Lam y (If (Var x) (Var y) True)) gives Bool -> Bool
+;; (Lam x (Lam y (If (Var x) (Var y) True))) gives Bool -> Bool -> Bool
 (infer-top '(Lam x (Lam y (If (Var x) (Var y) True))))
 
 ;; α -> α
@@ -484,18 +529,18 @@
 
 ;; x is α, g is β, f is γ
 ;; (App (Var g) (Var x)) gives β = α -> δ, β has to be in this form otherwise this fails
-;; (App (Var f (App (Var g) (Var x)))) gives γ = δ -> σ
-;; (Lam x (App (Var f (App (Var g) (Var x))))) gives α -> σ
-;; (Lam g (Lam x (App (Var f (App (Var g) (Var x)))))) gives β -> (α -> σ)
+;; (App (Var f) (App (Var g) (Var x))) gives γ = δ -> σ
+;; (Lam x (App (Var f) (App (Var g) (Var x)))) gives α -> σ
+;; (Lam g (Lam x (App (Var f) (App (Var g) (Var x))))) gives β -> (α -> σ)
 ;; (Lam f (Lam g (Lam x (App (Var f) (App (Var g) (Var x)))))) gives γ -> β -> (α -> σ)
 ;; which is (δ -> σ) -> (α -> δ) -> (α -> σ)
+;; try to read it from right to left
 
 #|
 (:ok ((1 fun (tvar 2) (tvar 3))     ;; replacing β by α -> σ
-      (0 fun (tvar 3) (tvar 4))     ;; replacing γ by δ -> σ
-      (0 fun (tvar 3) (tvar 4)))    ;; duplicate from compose-subst
+      (0 fun (tvar 3) (tvar 4)))     ;; replacing γ by δ -> σ
 ;; final result
-     (fun (fun (tvar 3) (tvar 4))   ;; (δ -> σ) -> (α -> σ) -> (α -> σ)
+     (fun (fun (tvar 3) (tvar 4))   ;; (δ -> σ) -> (α -> δ) -> (α -> σ)
           (fun (fun (tvar 2) (tvar 3))
                (fun (tvar 2) (tvar 4))))
      5)
@@ -526,7 +571,7 @@
 ;; (App (App (Var f) (Var x)) (Var x)) gives γ = α -> δ
 ;; (Lam x (App (App (Var f) (Var x)) (Var x))) gives α -> δ
 ;; (Lam f (Lam x (App (App (Var f) (Var x)) (Var x)))) gives α -> γ -> (α -> δ)
-;; which can be rewritten as α -> (α -> δ) -> (α -> δ)
+;; which can be rewritten as (α -> α -> δ) -> (α -> δ)
 (infer-top '(Lam f (Lam x (App (App (Var f) (Var x)) (Var x)))))
 
 ;; S Combinator, distribution
@@ -544,7 +589,8 @@
 ;; Combinator Relations
 
 ;; B = S (K S) K
-
+;; B Combinator is (δ -> σ) -> (α -> δ) -> (α -> σ)
+#|
 (infer-top '(App
   (App
     (Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x))))))
@@ -552,10 +598,10 @@
       (Lam x (Lam y (Var x)))
       (Lam f (Lam g (Lam x (App (App (Var f) (Var x)) (App (Var g) (Var x))))))))
   (Lam x (Lam y (Var x)))))
-
+|#
 
 ;; C = S (S (K (S (K S) K)) S) (K K)
-;; warning: run this leads to stake overflow
+;; C Combinator is (α -> β -> γ) -> β -> α -> γ 
 #|
 (infer-top '(App
   (App
@@ -580,7 +626,7 @@
 
 
 ;; W = S S (S K)
-;; Warning: run this leads to stake overflow
+;; W Combinator is (α -> α -> β) -> α -> β
 #|
 (infer-top '(App
   (App
@@ -599,18 +645,22 @@
 (infer-top '(Lam x (Var y)))
 
 ;; applying non-function
+;; Unification of Arrow type and Base Type fails
 (infer-top '(App True False))
 (infer-top '(Lam x (App True (Var x))))
 
 ;; Our type system (and HM too) cannot handle heterogenous if branches
+;; Unification of Base type with Arrow type fails
 (infer-top '(If True False (Lam x True)))
 (infer-top '(If True (Lam x True) False))
 
 
 
 ;; Bad If Condition
+;; Unification of arrow type with Bool fails
 (infer-top '(If (Lam x True) False True))
 
 ;; Our type system cannot handle infinite (recursive) type 
+;; Occurs check fails
 (infer-top '(Lam x (App (Var x) (Var x))))
 (infer-top '(Lam f (Lam x (App (Var f) (Var f)))))
