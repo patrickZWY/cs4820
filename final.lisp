@@ -287,6 +287,87 @@
     (multiple-value-bind (r _) (dpll (grade-normalize-cnf (tseitin '(and (or p q) (implies r s)))))
       (assert (== r 'sat)))))
 
+;;; ============================================================
+;;; BENCHMARK: DP Scientific Benchmark
+;;; ============================================================
+
+(defun ph-var (i j) `(pigeon ,i ,j))
+
+(defun ph-at-least-one (i n)
+  (mapcar (lambda (j) (ph-var i j))
+          (loop for j from 1 to n collect j)))
+
+(defun ph-no-conflict (n)
+  (let ((clauses nil))
+    (loop for j from 1 to n do
+      (loop for i1 from 1 to (1+ n) do
+        (loop for i2 from (1+ i1) to (1+ n) do
+          (push (list `(not ,(ph-var i1 j))
+                      `(not ,(ph-var i2 j)))
+                clauses))))
+    clauses))
+
+(defun pigeonhole-cnf (n)
+  (let ((clauses nil))
+    (loop for i from 1 to (1+ n) do
+      (push (ph-at-least-one i n) clauses))
+    (append clauses (ph-no-conflict n))))
+
+
+(format t "~%=== BENCHMARK: DP Scientific ===~%")
+
+;;; --- Benchmark harness ---
+
+(defparameter *bench-results* nil
+  "Accumulated benchmark results: list of (name . ms)")
+
+(defun bench-run (name thunk &optional (timeout 10))
+  "Run THUNK, record wall-clock ms, push to *bench-results*.
+   Returns (values result ms) or (values :timeout nil) if timeout exceeded."
+  (handler-case
+    (sb-ext:with-timeout timeout
+      (let* ((start (get-internal-real-time))
+             (result (funcall thunk))
+             (ms (* 1000.0 (/ (- (get-internal-real-time) start)
+                              internal-time-units-per-second))))
+        (push (cons name ms) *bench-results*)
+        (format t "  ~30a ~8,1f ms~%" name ms)
+        (values result ms)))
+    (sb-ext:timeout ()
+      (format t "  ~30a ~8a~%" name "TIMEOUT")
+      (push (cons name nil) *bench-results*)
+      (values :timeout nil))))
+
+(defun bench-report ()
+  "Print a sorted summary of all benchmark results collected so far."
+  (format t "~%--- DP Benchmark Summary (fastest to slowest) ---~%")
+  (let* ((finished (remove-if #'(lambda (r) (null (cdr r))) *bench-results*))
+         (sorted   (sort (copy-list finished) #'< :key #'cdr)))
+    (dolist (r sorted)
+      (format t "  ~30a ~8,1f ms~%" (car r) (cdr r)))
+    (let ((timeouts (remove-if #'cdr *bench-results*)))
+      (when timeouts
+        (format t "~%  Timed out: ~{~a~^, ~}~%"
+                (mapcar #'car timeouts))))))
+
+;;; --- Problem families ---
+
+;; 1. Pigeonhole (UNSAT) — already in rubric, but now timed via harness
+;;    so results feed into the summary table
+
+(format t "~%-- Pigeonhole (UNSAT) --~%")
+(setf *bench-results* nil)
+
+(dolist (n '(3 4 5 6))
+  (let ((clauses (pigeonhole-cnf n)))
+    (bench-run (format nil "pigeonhole-~a" n)
+               #'(lambda () (grade-dp-aux clauses))
+               15)))
+
+;;; --- Final summary ---
+(bench-report)
+
+
 ;;; BENCHMARK EC1
 
 (format t "~%=== BENCHMARK EC1: DP ===~%")
@@ -296,6 +377,7 @@
            (or (not p) (not q) r) (or p q (not r))
            (or (not p) q (not r)) (or p (not q) (not r))
            (or (not p) (not q) (not r)))))
+
 
 ;;; BENCHMARK EC2
 
@@ -345,7 +427,7 @@
       (time (dpll cnf)))))
 
 ;;; Pigeonhole benchmark
-
+#|
 (defun ph-var (i j) `(pigeon ,i ,j))
 
 (defun ph-at-least-one (i n)
@@ -367,7 +449,7 @@
     (loop for i from 1 to (1+ n) do
       (push (ph-at-least-one i n) clauses))
     (append clauses (ph-no-conflict n))))
-
+|#
 (format t "~%=== BENCHMARK: Pigeonhole (always UNSAT) ===~%")
 
 (format t "~%-- DP: 3 holes, 4 pigeons --~%")
@@ -390,3 +472,5 @@
 
     (format t "~%-- DPLL: 5 holes, 6 pigeons --~%")
     (time (grade-dpll-aux (pigeonhole-cnf 5)))))
+
+
