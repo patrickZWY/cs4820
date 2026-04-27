@@ -19,6 +19,10 @@ if you pass 0.01, deduct 1 percent for each 0.01 second past 0.01.
 from the pigeonhole tests. We compare pigeonhole-6 for least amount of time used 
 and only use other pigeonholes and simple test when there is a tie. For extra 
 credit DPLL, we use one benchmark. We do an average of three pigeonhole tests for DPLL.
+
+6) I don't deduct points for bad return formats or typos so if you cannot run your
+solution using our tests, maybe first make sure it is runnable 
+(trailing dot in file for example). 
 |#
 
 (in-package :tp)
