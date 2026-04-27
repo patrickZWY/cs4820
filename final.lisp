@@ -1,6 +1,26 @@
 ;;;; CS 4820 — HW5 Grading Rubric
 ;;;; Load after student's file (in package :tp)
 
+#|
+Grading Policy:
+1) If you write 10 tests for each subsection then you get full points whether 
+they pass or fail.
+
+2) For our tests, if you pass 70 percent of each subsection then full marks. 
+Otherwise deduct points as seen appropriate.
+
+3) For profiler, if you have one you get full marks. If you don’t have one, 
+we use pigeonhole benchmark and test all dp solutions against 0.01 second, 
+if you pass 0.01, deduct 1 percent for each 0.01 second past 0.01.
+
+4) For missing algorithm (for example missing dpll entirely), deduct all points.
+
+5) For extra credit DP, we use two benchmarks, one simple test and one modified 
+from the pigeonhole tests. We compare pigeonhole-6 for least amount of time used 
+and only use other pigeonholes and simple test when there is a tie. For extra 
+credit DPLL, we use one benchmark. We do an average of three pigeonhole tests for DPLL.
+|#
+
 (in-package :tp)
 
 ;;; ---------- grading-only tolerant CNF normalization ----------
