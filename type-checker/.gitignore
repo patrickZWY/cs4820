@@ -1,1 +1,8 @@
-dist-newstyle 
+dist-newstyle/
+dist/
+.cabal-sandbox/
+cabal.project.local
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o
