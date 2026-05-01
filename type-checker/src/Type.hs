@@ -131,6 +131,26 @@ composeSubst s1@(Subst _) s2@(Subst raw2) =
     let Subst filtered = composeSubstAux s1 s2
     in Subst (filtered ++ raw2)
 
+data UnifyResult
+    = UnifyOk Subst
+    | UnifyFail
+    deriving (Show, Eq)
+
+-- no checking if substp because data type already enforced by Haskell
+unifyOkp :: UnifyResult -> Bool
+unifyOkp (UnifyOk _) = True
+unifyOkp _ = False
+
+unifySubst :: UnifyResult -> Subst 
+unifySubst (UnifyOk subst) = subst
+unifySubst _ = error "Unification failed, no substitution available"
+
+-- again we do not need to tag a ok or fail because our haskell data type
+
+
+
+
+
 
 
 
