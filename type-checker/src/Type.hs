@@ -90,4 +90,47 @@ ifElse expr = case expr of
     If _ _ elseBranch -> elseBranch
     _ -> error "Not an If expression"
 
+substLookup :: Natural -> Subst -> Maybe Ty
+substLookup n (Subst s) = lookup n s
+
+envLookup :: String -> TyEnv -> Maybe Ty
+envLookup name (TyEnv env) = lookup name env
+
+applySubstTy :: Subst -> Ty -> Ty
+applySubstTy subst ty = case ty of
+    TBool -> TBool
+    TVar n -> case substLookup n subst of
+        Just ty' -> ty'
+        Nothing -> ty
+    TFun ty1 ty2 -> mkTFun (applySubstTy subst ty1) (applySubstTy subst ty2)
+
+--update typing environment recursively with substitution
+applySubstEnv :: Subst -> TyEnv -> TyEnv 
+applySubstEnv subst (TyEnv env) = TyEnv [(name, applySubstTy subst ty) | (name, ty) <- env]
+
+occursInTy :: Natural -> Ty -> Bool
+occursInTy n ty = case ty of
+    TBool -> False
+    TVar m -> n == m
+    TFun ty1 ty2 -> occursInTy n ty1 || occursInTy n ty2
+
+substHasKey :: Natural -> Subst -> Bool
+substHasKey n (Subst s) = any (\(m, _) -> m == n) s 
+
+composeSubstAux :: Subst -> Subst -> Subst
+composeSubstAux (Subst s1) (Subst s2) =
+    Subst (go s1)
+    where
+        go [] = []
+        go ((k, ty) : rest)
+            | substHasKey k (Subst s2) = go rest
+            | otherwise = (k, applySubstTy (Subst s2) ty) : go rest
+
+composeSubst :: Subst -> Subst -> Subst
+composeSubst s1@(Subst _) s2@(Subst raw2) =
+    let Subst filtered = composeSubstAux s1 s2
+    in Subst (filtered ++ raw2)
+
+
+
 
