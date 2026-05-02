@@ -105,7 +105,7 @@ applySubstTy subst ty = case ty of
     TFun ty1 ty2 -> mkTFun (applySubstTy subst ty1) (applySubstTy subst ty2)
 
 --update typing environment recursively with substitution
-applySubstEnv :: Subst -> TyEnv -> TyEnv 
+applySubstEnv :: Subst -> TyEnv -> TyEnv
 applySubstEnv subst (TyEnv env) = TyEnv [(name, applySubstTy subst ty) | (name, ty) <- env]
 
 occursInTy :: Natural -> Ty -> Bool
@@ -115,7 +115,7 @@ occursInTy n ty = case ty of
     TFun ty1 ty2 -> occursInTy n ty1 || occursInTy n ty2
 
 substHasKey :: Natural -> Subst -> Bool
-substHasKey n (Subst s) = any (\(m, _) -> m == n) s 
+substHasKey n (Subst s) = any (\(m, _) -> m == n) s
 
 composeSubstAux :: Subst -> Subst -> Subst
 composeSubstAux (Subst s1) (Subst s2) =
@@ -133,7 +133,7 @@ composeSubst s1@(Subst _) s2@(Subst raw2) =
 
 data UnifyResult
     = UnifyOk Subst
-    | UnifyFail
+    | UnifyFail String
     deriving (Show, Eq)
 
 -- no checking if substp because data type already enforced by Haskell
@@ -141,11 +141,55 @@ unifyOkp :: UnifyResult -> Bool
 unifyOkp (UnifyOk _) = True
 unifyOkp _ = False
 
-unifySubst :: UnifyResult -> Subst 
-unifySubst (UnifyOk subst) = subst
-unifySubst _ = error "Unification failed, no substitution available"
+-- this is not needed because we can pattern match on the UnifyResult
+{-
+unifysubst :: unifyresult -> subst
+unifysubst (unifyok subst) = subst
+unifysubst _ = error "unification failed, no substitution available"
+-}
 
 -- again we do not need to tag a ok or fail because our haskell data type
+
+bindTVar :: Natural -> Ty -> UnifyResult
+bindTVar n ty
+    | ty == mkTVar n = UnifyOk (Subst [])
+    | occursInTy n ty = UnifyFail ("Occurs check failed: cannot unify " 
+        ++ show (mkTVar n) ++ " with " ++ show ty)
+    | otherwise = UnifyOk (Subst [(n, ty)])
+
+
+unify :: Ty -> Ty -> UnifyResult
+unify ty1 ty2 = case (ty1, ty2) of
+    (TBool, TBool) -> UnifyOk (Subst [])
+
+    (TVar n, ty) -> bindTVar n ty
+    (ty, TVar n) -> bindTVar n ty
+
+    (TFun dom1 cod1, TFun dom2 cod2) ->
+        case unify dom1 dom2 of
+            UnifyFail msg ->
+                UnifyFail $
+                    "Failed to unify function domains: "
+                    ++ show dom1 ++ " and " ++ show dom2
+                    ++ ". Reason: " ++ msg
+
+            UnifyOk subst1 ->
+                case unify (applySubstTy subst1 cod1)
+                            (applySubstTy subst1 cod2) of
+                    UnifyFail msg ->
+                        UnifyFail $
+                            "Failed to unify function codomains: "
+                            ++ show cod1 ++ " and " ++ show cod2
+                            ++ ". Reason: " ++ msg
+
+                    UnifyOk subst2 ->
+                        UnifyOk (composeSubst subst2 subst1)
+
+    _ ->
+        UnifyFail $
+            "Failed to unify types: "
+            ++ show ty1 ++ " and " ++ show ty2
+
 
 
 

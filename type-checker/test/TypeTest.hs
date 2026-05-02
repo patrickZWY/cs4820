@@ -61,3 +61,14 @@ spec = do
                 (TVar 0)
                 `shouldBe`
                 TFun TBool (TVar 1)
+    
+    describe "unify" $ do
+        it "unifies two identical TBool types" $ do
+            unify TBool TBool `shouldBe` UnifyOk (Subst [])
+        
+        it "unifies a TVar with a type" $ do
+            unify (TVar 0) TBool `shouldBe` UnifyOk (Subst [(0, TBool)])
+        
+        it "fails to unify a TVar with a type that contains itself" $ do
+            unify (TVar 0) (TFun (TVar 0) TBool) `shouldBe`
+                UnifyFail "Occurs check failed: cannot unify TVar 0 with TFun (TVar 0) TBool"
