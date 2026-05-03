@@ -295,11 +295,44 @@ infer env expr next = case expr of
     Var _ -> inferVar env expr next
     Lam _ _ -> inferLam env expr next
     App _ _ -> inferApp env expr next
-    If {} -> inferIf env expr next
+    If _ _ _ -> inferIf env expr next
 
 
+inferTop :: Expr -> InferResult
+inferTop e = infer (TyEnv []) e 0
+
+-- testing helper for final shape of type of an expression
+-- start counting type variable from afresh
+normalizeTy :: Ty -> Ty
+normalizeTy ty =
+    let (ty', _, _) = go ty [] 0
+    in ty'
+    where
+        go :: Ty -> [(Natural, Natural)] -> Natural -> (Ty, [(Natural, Natural)], Natural)
+        go TBool renaming next =
+            (TBool, renaming, next)
+        
+        go (TVar old) renaming next =
+            case lookup old renaming of
+                Just new ->
+                    (TVar new, renaming, next)
+                Nothing ->
+                    let renaming' = (old, next) : renaming
+                    in (TVar next, renaming', next + 1)
+        
+        go (TFun a b) renaming next =
+            let (a', renaming1, next1) = go a renaming next
+                (b', renaming2, next2) = go b renaming1 next1
+            in (TFun a' b', renaming2, next2)
 
 
+inferTopType :: Expr -> Maybe Ty
+inferTopType e =
+    case inferTop e of
+        InferOk subst ty _ ->
+            Just (normalizeTy (applySubstTy subst ty))
+        InferFail _ ->
+            Nothing
 
 
 

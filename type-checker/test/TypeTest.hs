@@ -72,3 +72,7 @@ spec = do
         it "fails to unify a TVar with a type that contains itself" $ do
             unify (TVar 0) (TFun (TVar 0) TBool) `shouldBe`
                 UnifyFail "Occurs check failed: cannot unify TVar 0 with TFun (TVar 0) TBool"
+
+    describe "infer-top" $ do
+        it "infers id" $ do
+            inferTopType (Lam "x" (Var "x")) `shouldBe` Just (TFun (TVar 0) (TVar 0))
