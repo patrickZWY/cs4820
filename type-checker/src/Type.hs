@@ -1,25 +1,46 @@
 module Type where
-import GHC.Natural (Natural, naturalFromInteger)
+import GHC.Natural (Natural)
 import Syntax (Expr(..))
-import GHC.TypeLits (Nat)
+import Data.List (nub, (\\))
 
 data Ty
     = TVar Natural
     | TFun Ty Ty
     | TBool
+    | TInt
     deriving (Show, Eq)
 
-newtype TyEnv = TyEnv [(String, Ty)]
+data Scheme
+    = Forall [Natural] Ty
+    deriving (Show, Eq)
+
+newtype TyEnv = TyEnv [(String, Scheme)]
     deriving (Show, Eq)
 
 newtype Subst = Subst [(Natural, Ty)]
     deriving (Show, Eq)
+
+ftvTy :: Ty -> [Natural]
+ftvTy ty = case ty of
+    TVar n -> [n]
+    TFun a b -> nub (ftvTy a ++ ftvTy b)
+    TBool -> []
+    TInt -> []
+
+ftvScheme :: Scheme -> [Natural]
+ftvScheme (Forall vars ty) =
+    ftvTy ty \\ vars
+
+ftvEnv :: TyEnv -> [Natural]
+ftvEnv (TyEnv env) =
+    nub (concatMap (ftvScheme . snd) env)
 
 tyTag :: Ty -> String
 tyTag ty = case ty of
     TVar _ -> "TVar"
     TFun _ _ -> "TFun"
     TBool -> "TBool"
+    TInt -> "TInt"
 
 tVarId :: Ty -> Maybe Natural
 tVarId ty = case ty of
@@ -44,6 +65,8 @@ mkTFun dom cod = TFun dom cod
 
 exprTag :: Expr -> String
 exprTag expr = case expr of
+    Let _ _ _ -> "Let"
+    Lit _ -> "Lit"
     ETrue -> "ETrue"
     EFalse -> "EFalse"
     Var _ -> "Var"
@@ -91,11 +114,30 @@ ifElse expr = case expr of
     If _ _ elseBranch -> elseBranch
     _ -> error "Not an If expression"
 
+letBindingName :: Expr -> String
+letBindingName expr = case expr of
+    Let arg _ _ -> arg
+    _ -> error "Not a let binding name"
+
+letBoundExpression :: Expr -> Expr
+letBoundExpression expr = case expr of
+    Let _ bound _ -> bound
+    _ -> error "Not a bound expression"
+
+letBody :: Expr -> Expr
+letBody expr = case expr of
+    Let _ _ b -> b
+    _ -> error "Not a let body expression"
+
 substLookup :: Natural -> Subst -> Maybe Ty
 substLookup n (Subst s) = lookup n s
 
-envLookup :: String -> TyEnv -> Maybe Ty
+envLookup :: String -> TyEnv -> Maybe Scheme
 envLookup name (TyEnv env) = lookup name env
+
+removeSubstKeys :: [Natural] -> Subst -> Subst
+removeSubstKeys vars (Subst s) =
+    Subst [(k, ty) | (k, ty) <- s, not (k `elem` vars)]
 
 applySubstTy :: Subst -> Ty -> Ty
 applySubstTy subst ty = case ty of
@@ -104,14 +146,23 @@ applySubstTy subst ty = case ty of
         Just ty' -> ty'
         Nothing -> ty
     TFun ty1 ty2 -> mkTFun (applySubstTy subst ty1) (applySubstTy subst ty2)
+    TInt -> TInt
 
 --update typing environment recursively with substitution
+applySubstScheme :: Subst -> Scheme -> Scheme
+applySubstScheme subst (Forall vars ty) = 
+    Forall vars (applySubstTy subst' ty)
+        where
+            subst' = removeSubstKeys vars subst
+
 applySubstEnv :: Subst -> TyEnv -> TyEnv
-applySubstEnv subst (TyEnv env) = TyEnv [(name, applySubstTy subst ty) | (name, ty) <- env]
+applySubstEnv subst (TyEnv env) =
+    TyEnv [(name, applySubstScheme subst scheme) | (name, scheme) <- env]
 
 occursInTy :: Natural -> Ty -> Bool
 occursInTy n ty = case ty of
     TBool -> False
+    TInt -> False
     TVar m -> n == m
     TFun ty1 ty2 -> occursInTy n ty1 || occursInTy n ty2
 
@@ -137,19 +188,10 @@ data UnifyResult
     | UnifyFail String
     deriving (Show, Eq)
 
--- no checking if substp because data type already enforced by Haskell
 unifyOkp :: UnifyResult -> Bool
 unifyOkp (UnifyOk _) = True
 unifyOkp _ = False
 
--- this is not needed because we can pattern match on the UnifyResult
-{-
-unifysubst :: unifyresult -> subst
-unifysubst (unifyok subst) = subst
-unifysubst _ = error "unification failed, no substitution available"
--}
-
--- again we do not need to tag a ok or fail because our haskell data type
 
 bindTVar :: Natural -> Ty -> UnifyResult
 bindTVar n ty
@@ -162,7 +204,7 @@ bindTVar n ty
 unify :: Ty -> Ty -> UnifyResult
 unify ty1 ty2 = case (ty1, ty2) of
     (TBool, TBool) -> UnifyOk (Subst [])
-
+    (TInt, TInt) -> UnifyOk (Subst [])
     (TVar n, ty) -> bindTVar n ty
     (ty, TVar n) -> bindTVar n ty
 
@@ -191,27 +233,27 @@ unify ty1 ty2 = case (ty1, ty2) of
             "Failed to unify types: "
             ++ show ty1 ++ " and " ++ show ty2
 
+generalize :: TyEnv -> Ty -> Scheme
+generalize env ty =
+    Forall vars ty
+        where
+            vars = ftvTy ty \\ ftvEnv env
+
+instantiate :: Scheme -> Natural -> (Ty, Natural)
+instantiate (Forall vars ty) next =
+    let freshVars = take (length vars) [next..]
+        subst = Subst (zip vars (map TVar freshVars))
+    in (applySubstTy subst ty, next + fromIntegral (length vars))
+
 data InferResult
     = InferOk Subst Ty Natural
     | InferFail String
     deriving (Show, Eq)
 
--- inferSubst :: InferResult -> Subst
--- inferSubst (InferOk subst _ _) = subst
--- inferSubst _ = error "Inference failed, no substitution available"
-
--- inferType :: InferResult -> Ty
--- inferType (InferOk _ ty _) = ty
--- inferType _ = error "Inference failed, no type available"
-
--- inferNext :: InferResult -> Natural
--- inferNext (InferOk _ _ next) = next
--- inferNext _ = error "Inference failed, no next type variable available"
-
 freshTyVar :: Natural -> (Ty, Natural)
 freshTyVar next = (TVar next, next + 1)
 
-envExtend :: String -> Ty -> TyEnv -> TyEnv
+envExtend :: String -> Scheme -> TyEnv -> TyEnv
 envExtend name ty (TyEnv env) = TyEnv ((name, ty) : env)
 
 inferTrue :: TyEnv -> Expr -> Natural -> InferResult
@@ -222,16 +264,23 @@ inferFalse :: TyEnv -> Expr -> Natural -> InferResult
 inferFalse _ EFalse next = InferOk (Subst []) TBool next
 inferFalse _ _ _ = InferFail "Expected EFalse expression"
 
+inferLit :: TyEnv -> Expr -> Natural -> InferResult
+inferLit _ (Lit _) next = InferOk (Subst []) TInt next
+inferLit _ _ _ = InferFail "Expected Lit Expression"
+
 inferVar :: TyEnv -> Expr -> Natural -> InferResult
 inferVar env (Var name) next = case envLookup name env of
-    Just ty -> InferOk (Subst []) ty next
+    Just scheme ->
+        let (ty, next1) = instantiate scheme next
+        in InferOk (Subst []) ty next1
     Nothing -> InferFail ("Unbound variable: " ++ name)
 inferVar _ _ _ = InferFail "Expected Var expression"
 
 inferLam :: TyEnv -> Expr -> Natural -> InferResult
 inferLam env (Lam var body) next =
     let (paramTy, next1) = freshTyVar next
-        env' = envExtend var paramTy env
+        -- wrap type as monomorphic scheme
+        env' = envExtend var (Forall [] paramTy) env
     in case infer env' body next1 of
         InferFail msg -> InferFail ("Failed to infer lambda body: " ++ msg)
         InferOk subst bodyTy next2 ->
@@ -285,8 +334,28 @@ inferIf env (If cond thenBranch elseBranch) next =
                                             ++ show elseTy)
                                         UnifyOk substUnifyElse ->
                                             let s = foldr1 composeSubst [substUnifyElse, substElse, substThen, substUnifyCond, substCond]
-                                                in InferOk s (applySubstTy s elseTy) next
+                                                in InferOk s (applySubstTy s elseTy) next3
 inferIf _ _ _ = InferFail "Unexpected If expression"
+
+inferLet :: TyEnv -> Expr -> Natural -> InferResult
+inferLet env (Let name bound body) next =
+    case infer env bound next of
+        InferFail msg ->
+            InferFail ("Failed to infer let-bound expression: " ++ msg)
+        InferOk subst1 boundTy next1 ->
+            let env1 = applySubstEnv subst1 env 
+                boundTy1 = applySubstTy subst1 boundTy
+                scheme = generalize env1 boundTy1
+                env2 = envExtend name scheme env1
+                in case infer env2 body next1 of
+                    InferFail msg ->
+                        InferFail ("Failed to infer let body: " ++ msg)
+                    InferOk subst2 bodyTy next2 ->
+                        let subst = composeSubst subst2 subst1 in
+                            InferOk subst (applySubstTy subst bodyTy) next2
+inferLet _ _ _ =
+        InferFail "Failed to infer let when no let expression found"
+
 
 infer :: TyEnv -> Expr -> Natural -> InferResult
 infer env expr next = case expr of
@@ -296,6 +365,8 @@ infer env expr next = case expr of
     Lam _ _ -> inferLam env expr next
     App _ _ -> inferApp env expr next
     If _ _ _ -> inferIf env expr next
+    Lit _ -> inferLit env expr next
+    Let _ _ _ -> inferLet env expr next
 
 
 inferTop :: Expr -> InferResult
@@ -311,6 +382,9 @@ normalizeTy ty =
         go :: Ty -> [(Natural, Natural)] -> Natural -> (Ty, [(Natural, Natural)], Natural)
         go TBool renaming next =
             (TBool, renaming, next)
+        
+        go TInt renaming next =
+            (TInt, renaming, next)
         
         go (TVar old) renaming next =
             case lookup old renaming of
