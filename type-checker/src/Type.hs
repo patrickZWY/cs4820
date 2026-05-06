@@ -259,7 +259,7 @@ inferApp env (App fun arg) next =
                         UnifyOk substUnify ->
                             -- substUnify is the latest substitution
                             let subst = composeSubst substUnify (composeSubst substArg substFun)
-                            in InferOk subst resultTy next3
+                            in InferOk subst (applySubstTy subst resultTy) next3
 inferApp _ _ _ = InferFail "Expected App expression"       
 
 
