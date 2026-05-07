@@ -1,8 +1,39 @@
 module TypeTest where
 
 import Test.Hspec
+import Test.QuickCheck
 import Type
 import Syntax
+import GHC.Natural (Natural)
+
+propSubstEmpty :: Ty -> Bool
+propSubstEmpty ty =
+    applySubstTy (Subst []) ty == ty
+
+genVar :: Gen Ty
+genVar = TVar . fromInteger <$> choose (0, 5)
+
+instance Arbitrary Ty where
+    arbitrary = sized genTy
+        where
+            genVar :: Gen Ty
+            genVar = TVar . fromInteger <$> choose (0, 5)
+
+            genTy 0 =
+                oneof
+                    [ pure TBool
+                    , pure TInt
+                    , genVar
+                    ]
+
+            genTy n =
+                oneof
+                    [ pure TBool
+                    , pure TInt
+                    , genVar
+                    , TFun <$> genTy (n `div` 2)
+                            <*> genTy (n `div` 2)
+                    ]
 
 spec :: Spec
 spec = do
@@ -246,5 +277,9 @@ spec = do
                         (App (Var "f") ETrue)
                         (App (Var "f") (Lit 3))))
                 `shouldBe` Nothing
+
+    describe "substitution" $ do
+        it "empty substitution preserves types" $
+            property propSubstEmpty
         
 

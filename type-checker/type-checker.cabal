@@ -70,7 +70,7 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.17.2.0
+    build-depends:    base >=4.17 && <4.19
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -93,7 +93,7 @@ executable type-checker
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base ^>=4.17.2.0,
+        base >=4.17 && <4.19,
         type-checker
 
     -- Directories containing source files.
@@ -127,6 +127,7 @@ test-suite type-checker-test
 
     -- Test dependencies.
     build-depends:
-        base ^>=4.17.2.0,
+        base >=4.17 && <4.19,
         type-checker,
-        hspec
+        hspec,
+        QuickCheck
