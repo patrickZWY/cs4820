@@ -135,6 +135,75 @@ spec = do
             inferTopType (Lam "f" (Lam "g" (Lam "x" (App (App (Var "f") (Var "x")) (App (Var "g") (Var "x"))))))
                 `shouldBe` Just (TFun (TFun (TVar 0) (TFun (TVar 1) (TVar 2))) (TFun (TFun (TVar 0) (TVar 1)) (TFun (TVar 0) (TVar 2))))
 
+        it "infers let id : α -> α" $ do
+            inferTopType (Let "id" (Lam "x" (Var "x")) (Var "id"))
+                `shouldBe` Just (TFun (TVar 0) (TVar 0))
+
+        
+        -- let-polymorphism
+        it "infers let id applied to Bool" $ do
+            inferTopType (Let "id" (Lam "x" (Var "x")) (App (Var "id") ETrue))
+                `shouldBe` Just TBool
+
+        it "infers let id applied to Int" $ do
+            inferTopType (Let "id" (Lam "x" (Var "x")) (App (Var "id") (Lit 3)))
+                `shouldBe` Just TInt
+
+        it "infers polymorphic let id used at Int" $ do
+            inferTopType
+                (Let "id"
+                    (Lam "x" (Var "x"))
+                    (If ETrue
+                        (App (Var "id") (Lit 3))
+                        (App (Var "id") (Lit 4))))
+                `shouldBe` Just TInt
+
+        it "infers polymorphic let const used at Bool" $ do
+            inferTopType
+                (Let "const"
+                    (Lam "x" (Lam "y" (Var "x")))
+                    (App (App (Var "const") ETrue) (Lit 3)))
+                `shouldBe` Just TBool
+
+        it "infers polymorphic let const used at Int" $ do
+            inferTopType
+                (Let "const"
+                    (Lam "x" (Lam "y" (Var "x")))
+                    (App (App (Var "const") (Lit 3)) ETrue))
+                `shouldBe` Just TInt
+        
+        it "infers let id used at both Bool and Int" $ do
+            inferTopType
+                (Let "id"
+                    (Lam "x" (Var "x"))
+                    (App
+                        (App
+                            (Lam "b" (Lam "i" (Var "b")))
+                            (App (Var "id") ETrue))
+                        (App (Var "id") (Lit 3))))
+                `shouldBe` Just TBool
+
+        it "infers nested let" $ do
+            inferTopType
+                (Let "id"
+                    (Lam "x" (Var "x"))
+                    (Let "a"
+                        (App (Var "id") ETrue)
+                        (App (Var "id") (Lit 3))))
+                `shouldBe` Just TInt
+
+        it "infers let id inside lambda remains polymorphic in body" $ do
+            inferTopType
+                (Lam "z"
+                    (Let "id"
+                        (Lam "x" (Var "x"))
+                        (If (Var "z")
+                            (App (Var "id") ETrue)
+                            (App (Var "id") EFalse))))
+                `shouldBe` Just (TFun TBool TBool)
+
+
+
     describe "infer error cases" $ do
         it "fails on unbound variable" $ do
             inferTopType (Var "x") `shouldBe` Nothing
@@ -156,6 +225,26 @@ spec = do
             inferTopType (Lam "f" (Lam "x" (App (Var "f") (Var "f"))))
                 `shouldBe` Nothing
 
+        it "fails when let-bound value is ill typed" $ do
+            inferTopType
+                (Let "bad"
+                    (App ETrue EFalse)
+                    (Var "bad"))
+                `shouldBe` Nothing
 
+        it "fails when let body is ill typed" $ do
+            inferTopType
+                (Let "id"
+                    (Lam "x" (Var "x"))
+                    (App ETrue (Var "id")))
+                `shouldBe` Nothing
+
+        it "fails because lambda parameter is monomorphic" $ do
+            inferTopType
+                (Lam "f"
+                    (If ETrue
+                        (App (Var "f") ETrue)
+                        (App (Var "f") (Lit 3))))
+                `shouldBe` Nothing
         
 
